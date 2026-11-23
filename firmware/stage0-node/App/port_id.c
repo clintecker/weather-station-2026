@@ -20,6 +20,7 @@
 #include "port_id.h"
 #include <string.h>
 #include "i2c_bus.h"
+#include "pod_write.h"
 #include "ws_be.h"
 #include "ws_check.h"
 
@@ -46,7 +47,7 @@ typedef struct {
   uint8_t tries, crc_reread, read_ok, has_serial, nacks, gone, serial_tries, incomplete;
   uint32_t sensor_serial;
   port_id_expect expect;
-  uint8_t slot;
+  uint8_t slot, locked;   /* locked: a PODWRITE job has the port (pod_write.c) */
   /* The identity check: */
   pc_step cstep;
   uint8_t agreed, changed, c_has_serial, c_nack;
@@ -63,11 +64,16 @@ static pi_t *eng(enum wsmp_port p) { return &pi[(unsigned)p - (unsigned)P_AIR_TH
 
 void port_id_init(void) { memset(pi, 0, sizeof pi); }
 
+enum i2c_client port_id_client(enum wsmp_port p)
+{
+  return (enum i2c_client)((unsigned)I2C_C_REC_AIR + (unsigned)p - (unsigned)P_AIR_TH);
+}
+
 static void rec_read(enum wsmp_port p, uint16_t at, uint16_t len)
 {
   pi_t *s = eng(p);
   /* The bus refuses only a busy client or a bad form; one step at a time on one lane makes neither. */
-  enum i2c_client c = (enum i2c_client)((unsigned)I2C_C_REC_AIR + (unsigned)p - (unsigned)P_AIR_TH);
+  enum i2c_client c = port_id_client(p);
   s->word[0] = (uint8_t)(at >> BYTE_BITS);
   s->word[1] = (uint8_t)at;
   (void)WS_CHECK(i2c_bus_submit(c, REC_ADDR, s->word, WORD_LEN, s->img, len) == 0);
@@ -81,7 +87,7 @@ static int check_on_bus(pc_step step) { return step >= C_SHORT_SERIAL && step <=
 static void update_hold(enum wsmp_port p)
 {
   const pi_t *s = eng(p);
-  local_hold(p, job_running(s->step) || check_running(s->cstep) || s->slot);
+  local_hold(p, job_running(s->step) || check_running(s->cstep) || s->slot || s->locked);
 }
 
 static void finish(enum wsmp_port p)
@@ -103,6 +109,18 @@ void port_id_slot(enum wsmp_port p, int on)
 {
   eng(p)->slot = (uint8_t)(on != 0);
   update_hold(p);
+}
+
+void port_id_lock(enum wsmp_port p, int on)
+{
+  eng(p)->locked = (uint8_t)(on != 0);
+  update_hold(p);
+}
+
+int port_id_quiet(enum wsmp_port p)
+{
+  const pi_t *s = eng(p);
+  return (!job_running(s->step) || s->step == PI_WAIT) && (!check_running(s->cstep) || s->cstep == C_WAIT);
 }
 
 void port_id_identify(enum wsmp_port p) { start(p, JOB_IDENTIFY); }
@@ -188,7 +206,7 @@ static int check_tick(enum wsmp_port p);
 static int job_waits(enum wsmp_port p)
 {
   if (eng(p)->step != PI_WAIT) return 0;
-  if (!eng(p)->slot && local_idle(p)) begin_work(p);
+  if (!eng(p)->slot && !eng(p)->locked && local_idle(p)) begin_work(p);
   return 1;
 }
 
@@ -197,6 +215,7 @@ void port_id_tick(enum wsmp_port p)
   pi_t *s = eng(p);
   uint32_t serial = 0;
   int r;
+  pod_write_tick(p);
   if (check_tick(p) || job_waits(p)) return;   /* the identity check first: it has priority */
   if (!waits_on_driver(s->step)) return;
   r = local_id_result(p, &serial);
@@ -228,6 +247,7 @@ static void check_i2c_done(enum wsmp_port p, int rc);
 void port_id_i2c_done(enum wsmp_port p, int rc)
 {
   pi_step step = eng(p)->step;
+  if (pod_write_owns(p)) { pod_write_i2c_done(p, rc); return; }   /* the record client is PODWRITE's */
   if (check_on_bus(eng(p)->cstep)) { check_i2c_done(p, rc); return; }
   if (step == PI_REC) rec_done(p, rc);
   else if (WS_CHECK(step == PI_H_SHORT || step == PI_H_FULL)) holder_record_done(p, rc);
@@ -334,7 +354,7 @@ static int check_tick(enum wsmp_port p)
   if (s->cstep == C_WAIT)
   {
     if (job_running(s->step) && s->step != PI_WAIT) return 0;   /* a job past its start finishes first */
-    if (local_idle(p)) check_begin(p);
+    if (!s->locked && local_idle(p)) check_begin(p);
     return 1;
   }
   if (s->cstep != C_SERIAL && s->cstep != C_SERIAL2) return check_running(s->cstep);

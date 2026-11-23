@@ -197,6 +197,27 @@ void h_rain_history(void) { mod_rain_history(now_ms(), &rhist); }
 uint32_t h_rain_hist_tips(void) { return rhist.tips; }
 uint32_t h_rain_hist_age(void) { return rhist.last_age_s; }
 int h_rain_hist_min(int i) { return rhist.per_min[i]; }
+/* PODWRITE (App/pod_write.c): the job, and its report as App/tx_console.c would print it. */
+#include "pod_write.h"
+static pod_write_result pw_last;
+static int pw_reports;
+void pod_write_report(const pod_write_result *r) { pw_last = *r; pw_reports++; }
+int h_pw_parse(const char *args, unsigned *port, unsigned *type, uint64_t *serial) { return pod_write_parse(args, port, type, serial); }
+int h_pw_start(int port, int type, uint64_t serial, uint32_t utc) { return pod_write_start((enum wsmp_port)port, (uint16_t)type, serial, utc); }
+int h_pw_busy(void) { return pod_write_busy(); }
+int h_pw_reports(void) { return pw_reports; }
+int h_pw_outcome(void) { return pw_last.outcome; }
+uint32_t h_pw_bind(void) { return pw_last.bind_value; }
+uint32_t h_pw_crc(void) { return pw_last.crc; }
+void h_pw_image(uint8_t out[WSMP_RECORD_LEN]) { memcpy(out, pw_last.image, WSMP_RECORD_LEN); }
+void h_eeprom_wp(int dev, int on) { model_eeprom_wp(dev, on); }
+void h_eeprom_cycle(int dev, uint32_t ms) { model_eeprom_cycle(dev, ms); }
+uint32_t h_eeprom_transfers(int dev) { (void)dev; return i2c_sim_addr_transfers(0x50); }
+uint32_t h_eeprom_page_writes(int dev) { return model_eeprom_page_writes(dev); }
+void h_eeprom_read_back(int dev, uint8_t out[WSMP_RECORD_LEN])
+{
+  for (unsigned i = 0; i < WSMP_RECORD_LEN; i++) out[i] = model_eeprom_byte(dev, (uint16_t)i);
+}
 #ifdef WSMP_HOST
 #include "wsmp_host.h"
 /* The host, with its first latch a minute from now (as app_tx.c tells it at each sample tick). */

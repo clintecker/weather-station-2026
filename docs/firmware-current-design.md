@@ -62,8 +62,9 @@ flowchart LR
   and nothing upstream uses 0x50.
 - The plan is to program each EEPROM once with its sensor's record (section 6.9) and then
   write-protect it, with WP strapped to VCC. Adafruit's 24LC32 page says WP to VCC makes the part
-  read-only. Nobody has programmed or strapped an EEPROM this way yet, and no programming fixture
-  exists. The breakout's default WP state is **TBD**, so check it.
+  read-only. The pods (hardware/pods-r1) strap WP with a JP1 shunt: on is protected, off is
+  writable. The TX writes a pod's record itself with `PODWRITE` (below, "Programming"). Nobody has
+  run it on hardware yet.
 - When the sensor moves onto its v1 module board, you copy the record to that board's EEPROM, so the
   serial doesn't change.
   Then you invalidate the breakout's copy (section 6.9, **Copying a record**).
@@ -385,8 +386,8 @@ Then the station decides:
   the holder is Absent.
 
 Only removing the module releases a `TYPE_CONFLICT` quarantine (WSMP §7: Quarantined → Absent). A
-WSMP-P6 flap quarantine still ends after its hour. You correct the record off the station, on the
-programming fixture.
+WSMP-P6 flap quarantine still ends after its hour. You correct the record with the JP1 shunt off
+(section 6.9, "Programming").
 
 **A quarantined or refused port keeps its probe slot.** It probes the module's
 address each slot, and two missed probes in a row make it Absent, so the station always sees a
@@ -441,7 +442,7 @@ Active and Suspect I2C module, on a fixed schedule:
   calibration can sit anywhere in the 128 bytes, past the serial. Take a module admitted as
   `NO_RECORD` (CRC) after a short-lived corruption, or MALFORMED by a field after 0x13. Without a
   whole-image compare it would keep a matching prefix for ever, with its fallback serial and no
-  calibration, after the record reads valid again. A `CAL_REJECTED` record rewritten on the fixture
+  calibration, after the record reads valid again. A `CAL_REJECTED` record rewritten with the JP1 shunt off
   is a new record.
 - **How the full reads run.** In code the two full reads are record-client bus reads (`rec_read` and
   `check_i2c_done` in `port_id.c`), chained on bus completion. They aren't driver steps. The design
@@ -549,7 +550,7 @@ the observation and diagnostic kinds (section 13.3). The WSMP edits are in secti
   | Top byte | Source | Low 56 bits |
   |---|---|---|
   | 0x00 | station-bound fallback, `WSMP_LOCAL_SERIAL(port, type)` (its value `0x575300000000 \| port << 8 \| type` already has a zero top byte) | unique only within one station |
-  | 0x01 | programmed record (source 1) | station-checked: neither 0 nor all ones (`serial_ok` in `wsmp.c`). Planned: the programming fixture (not built yet) draws them at random and logs each serial in the serial ledger (section 6.9). The CSPRNG is a design intent with no code behind it |
+  | 0x01 | programmed record (source 1) | station-checked: neither 0 nor all ones (`serial_ok` in `wsmp.c`). `tools/podwrite.py` draws them with `secrets` and logs each serial in the serial ledger (section 6.9) |
   | 0x02 | the sensor's own serial (source 2) | bits 55–40 the module type, bits 39–32 0, bits 31–0 the sensor's serial (SHT4x: its 32-bit serial) |
   | 0x03 | v2 adapter MCU unique ID (fallback) | the low 56 bits of FNV-1a-64 over the 12 UID bytes (section 7) |
 
@@ -663,7 +664,7 @@ A longer record needs a new major.
 | 0x15 | 3 | reserved | 0 |
 | 0x18 | 4 | sensor-bind value | the bound sensor's serial. 0 when the kind is 0 |
 | 0x1C | 4 | programming time | UTC seconds. Informational, never identity |
-| 0x20 | 16 | part number | WSMP-M1 characters. Shorter than 16: padded with 0 bytes, and no non-zero byte after the first 0. Exactly 16 characters: no 0 byte. The station accepts an empty part number (16 zero bytes). The planned programming fixture will require a non-empty one (no fixture code exists yet) |
+| 0x20 | 16 | part number | WSMP-M1 characters. Shorter than 16: padded with 0 bytes, and no non-zero byte after the first 0. Exactly 16 characters: no 0 byte. The station accepts an empty part number (16 zero bytes). `PODWRITE` always writes a non-empty one |
 | 0x30 | 16 | reserved | 0 |
 | 0x40 | 48 | calibration, 3 entries of 16 B | see below |
 | 0x70 | 12 | reserved | 0 |
@@ -799,31 +800,37 @@ section 6.7, and check 7 is step 3c.
 At worst a record can flag `NO_RECORD`, flag `CAL_REJECTED` or quarantine a port. The station parses
 it only at admission and at the identity check, and parsing never resets the station.
 
-**The station never writes 0x50.** Its only use of the record clients (`port_id.c`) is the
-word-address-then-read form. `i2c_bus` itself doesn't block a write to 0x50, but WP holds the array
-in any case.
+**The station writes 0x50 only for `PODWRITE`.** The identity reads (`port_id.c`) only use the
+word-address-then-read form. The one writer is `pod_write.c`, behind a console command with a confirm
+token. `i2c_bus` itself doesn't block a write to 0x50, and WP holds the array in any case.
 
 **Test page.** Page 127 (word addresses 0xFE0–0xFFF) sits outside the record and its CRC. It's the
 cable test's write-and-read-back page (section 5.2). It's written only on the cable-test fixture with
 WP opened. On a fielded, write-protected module nobody writes it. H04a counts CRC-checked record
 reads there instead.
 
-**Programming fixture** (a host tool, section 13.3). It isn't built yet. Here's the planned
-procedure:
-1. For an SHT4x module, read the sensor's serial (command 0x89, CRC-checked) and put it in the
-   sensor bind (kind 1). For other types use kind 0 (the fixture refuses kind 1 on them).
-2. Refuse to write a record that would fail any check above, including the calibration table (a
-   used entry with revision 0, an entry matching no channel of the type). Also refuse one whose part
-   number is empty (the station accepts an empty one, the fixture doesn't).
-3. Pull the WP pad low. Write the record page by page (32-byte pages, 5 ms write cycle per page,
-   from the EEPROM's datasheet, CAT24C32 or equivalent, verify).
-4. Read back the whole record and byte-compare it with what you wrote. If anything differs, reject
-   the board and don't use the serial.
-5. Append a ledger row: serial, module type, sensor-bind value, board revision, the record CRC, the
-   full 128-byte record image in hex, date and operator. The ledger is a CSV in the repository, and
-   its path gets chosen when the fixture is built. Never reuse a serial, even for a rejected board.
-6. Release WP. Parse the record once more as the station does (**Checks** above). It must pass with
-   status 0.
+**Programming.** The TX does it, with the pod on its port (`App/pod_write.c`, tested in
+`tests/test_pod_write.py`). `tools/podwrite.py` draws the serial (0x01 and 56 bits from `secrets`)
+and sends `PODWRITE <port> <type> <serial> WRITE-POD-RECORD`. The steps, each a bus completion or a
+module tick (nothing waits):
+1. Lock the port's identity reads and hold its driver. Read the EEPROM. If a valid record is there,
+   refuse (`has-record`). A blank part, the breakout's factory bytes or a broken record get written
+   over.
+2. For the SHT45 (type 1), read the sensor's serial (0x89, CRC-checked, the driver's own step) into
+   the sensor bind (kind 1). Types 2 and 3 get kind 0.
+3. Pack the record: hw_rev 1, the part number (`WS-POD-TH-R1`, `WS-POD-BARO-R1`, `WS-POD-UV-R1`),
+   no calibration, the time if known. It must parse as the station would before anything is written.
+4. Write it as four 32-byte pages, with acknowledge polling after each (the 24LC32 NACKs its address
+   for up to 5 ms while the write cycle runs; 32 polls, then `timeout`).
+5. Read all 128 bytes back, compare them byte for byte and parse them. A WP that's still on shows
+   up here (`verify`).
+6. Report one `#podwrite ok ... record=<hex>` or `#podwrite FAIL ... why=` line. The tool writes a
+   ledger row to `hardware/pods-r1/serial-ledger.csv` before it sends the line (`sent`) and another
+   with the outcome: serial, pod, port, type, board revision, sensor bind, record CRC, the 128-byte
+   image, date and operator. A serial is never reused, even after a failed write.
+Then the shunt goes back on, and the next probe admits the pod with `source=record`. Session P page
+W1 is the bench version. A calibration write (below) needs a second command, which doesn't exist
+yet.
 
 **Recalibration** keeps the serial. You write new coefficients and raise the changed entries'
 calibration revision by one, which gives a new record CRC. You write and verify it as above, and you

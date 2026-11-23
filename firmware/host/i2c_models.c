@@ -369,6 +369,31 @@ void model_eeprom_write(int dev, uint16_t at, const uint8_t *data, uint16_t n)
 {
   for (uint16_t i = 0; i < n; i++) eeprom[dev][(at + i) % EEPROM_LEN] = data[i];
 }
+/* Writes over the bus (PODWRITE, App/pod_write.c): the 2-byte word address, then data that wraps inside
+   its 32-byte page, as the 24LC32's page buffer does. A write with data starts a 5 ms write cycle
+   (the datasheet's maximum), during which the part NACKs its address. With WP high (model_eeprom_wp)
+   the part acknowledges the data and writes nothing, and no write cycle starts. */
+#define EEPROM_PAGE 32U
+#define EEPROM_CYCLE_MS 5U
+static int eeprom_wp[I2C_SIM_DEVICES];
+static uint32_t eeprom_cycle_ms[I2C_SIM_DEVICES];   /* 0: EEPROM_CYCLE_MS */
+static uint64_t eeprom_busy_until[I2C_SIM_DEVICES];
+static uint32_t eeprom_page_writes[I2C_SIM_DEVICES];
+void model_eeprom_wp(int dev, int on) { eeprom_wp[dev] = on; }
+void model_eeprom_cycle(int dev, uint32_t ms) { eeprom_cycle_ms[dev] = ms; }
+int model_eeprom_busy(int dev) { return sim_now() < eeprom_busy_until[dev]; }
+uint32_t model_eeprom_page_writes(int dev) { return eeprom_page_writes[dev]; }
+uint8_t model_eeprom_byte(int dev, uint16_t at) { return eeprom[dev][at % EEPROM_LEN]; }
+static int eeprom_bus_write(int dev, const uint8_t *data, uint16_t n)
+{
+  if (n < 2U) return -1;
+  uint16_t at = (uint16_t)((unsigned)data[0] << 8 | data[1]) % EEPROM_LEN, base = (uint16_t)(at - at % EEPROM_PAGE);
+  if (n == 2U || eeprom_wp[dev]) return 0;   /* an address only, or write-protected: nothing written */
+  for (uint16_t i = 0; i < n - 2U; i++) eeprom[dev][base + (at - base + i) % EEPROM_PAGE] = data[2U + i];
+  eeprom_page_writes[dev]++;
+  eeprom_busy_until[dev] = sim_now() + (uint64_t)(eeprom_cycle_ms[dev] ? eeprom_cycle_ms[dev] : EEPROM_CYCLE_MS) * SIM_UNITS_PER_MS;
+  return 0;
+}
 void model_eeprom_fail_next(int dev, int n) { eeprom_fails[dev] = n; eeprom_skips[dev] = 0; }
 void model_eeprom_fail_after(int dev, int skip, int n) { eeprom_fails[dev] = n; eeprom_skips[dev] = skip; }
 void model_eeprom_corrupt_next(int dev, int n) { model_eeprom_corrupt_at(dev, 0x20U, n); }
@@ -596,6 +621,18 @@ uint8_t model_bq25798_reg(int dev, uint8_t reg)
   return reg < BQ_REGS ? b->r[reg] : 0xFFU;
 }
 
+/* The sensor parts' writes (model_write's other half). */
+static int sensor_write(int kind, int dev, const uint8_t *data, uint16_t n)
+{
+  switch (kind)
+  {
+    case DEVK_SHT45: return sht45_write(dev, data, n);
+    case DEVK_SHTC3: return shtc3_write(dev, data, n);
+    case DEVK_BMP581: case DEVK_LTR390: return reg_write(kind, dev, data, n);
+    default: return -1;
+  }
+}
+
 int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
 {
   switch (kind)
@@ -603,11 +640,9 @@ int model_write(int kind, int dev, const uint8_t *data, uint16_t n)
     case DEVK_MUX: return mux_write(data, n);
     case DEVK_INA228: return ina228_write(dev, data, n);
     case DEVK_TEST: memcpy(test_written[dev], data, n < I2C_SIM_BUF ? n : I2C_SIM_BUF); return 0;
-    case DEVK_SHT45: return sht45_write(dev, data, n);
-    case DEVK_SHTC3: return shtc3_write(dev, data, n);
-    case DEVK_BMP581: case DEVK_LTR390: return reg_write(kind, dev, data, n);
     case DEVK_BQ25798: return bq_write(dev, data, n);
-    default: return -1;
+    case DEVK_EEPROM: return eeprom_bus_write(dev, data, n);
+    default: return sensor_write(kind, dev, data, n);
   }
 }
 
@@ -641,7 +676,8 @@ int model_mem_read(int kind, int dev, uint16_t reg, uint8_t *data, uint16_t n)
 static void eeprom_reset(int dev)
 {
   for (unsigned i = 0; i < EEPROM_LEN; i++) eeprom[dev][i] = (uint8_t)i;
-  eeprom_fails[dev] = eeprom_corrupts[dev] = 0;
+  eeprom_fails[dev] = eeprom_corrupts[dev] = eeprom_wp[dev] = 0;
+  eeprom_busy_until[dev] = 0; eeprom_page_writes[dev] = 0; eeprom_cycle_ms[dev] = 0;
 }
 
 void model_reset(int kind, int dev)

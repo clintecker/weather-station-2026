@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "wsmp_ident.h"
 #include "wsmp_local.h"
+#include "i2c_bus.h"
 
 /* What a holder check and an identity check compare: the identity seen at the module's admission.
    serial is the record's serial (with_record), id_serial the verdict's (any source), status the record
@@ -57,4 +58,11 @@ void port_id_check(enum wsmp_port p, const port_id_expect *e);
 int port_id_check_result(enum wsmp_port p);
 void port_id_check_end(enum wsmp_port p);
 void port_id_i2c_done(enum wsmp_port p, int rc);
+/* The port's record client (0x50 on its channel). */
+enum i2c_client port_id_client(enum wsmp_port p);
+/* PODWRITE (App/pod_write.c) has the port: on, no identification, holder check or identity check
+   begins, and the driver is held; one already past its start runs on. */
+void port_id_lock(enum wsmp_port p, int on);
+/* 1 when no identity read of the port is past its start: the record client and the driver are free. */
+int port_id_quiet(enum wsmp_port p);
 #endif

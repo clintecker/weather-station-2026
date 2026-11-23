@@ -75,6 +75,7 @@ void i2c_sim_fail_nth(int dev, uint32_t n, int mode)
    count runs out, else its own. */
 static int mode_now(sim_dev *d)
 {
+  if (d->kind == DEVK_EEPROM && model_eeprom_busy((int)(d - devs))) return DM_NACK_ADDR;   /* its write cycle */
   if (d->fail_in && --d->fail_in == 0) return d->fail_mode;
   return d->mode;
 }

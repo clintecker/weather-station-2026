@@ -9,6 +9,8 @@
 #include "console.h"
 #include "i2c_bus.h"
 #include "node_store.h"
+#include "pod_write.h"
+#include "ws_be.h"
 #include "stackmon.h"
 #include "stage0.h"
 #include "stm32_seq.h"
@@ -262,10 +264,10 @@ static void provision(char *line)
 
 /* From CMD_STORM on, a command writes flash: never during a radio exchange or a pending reboot
    (flash is only written with the radio idle, docs/firmware-event-model.md); the operator retries. */
-enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_SPOWER, CMD_CHARGER, CMD_STORM, CMD_WIPE, CMD_PROVISION, CMD_RAIN_ON,
-       CMD_RAIN_OFF, CMD_COUNT };
+enum { CMD_STATUS, CMD_KAT, CMD_MODULES, CMD_SPOWER, CMD_CHARGER, CMD_PODWRITE, CMD_STORM, CMD_WIPE, CMD_PROVISION,
+       CMD_RAIN_ON, CMD_RAIN_OFF, CMD_COUNT };
 static const char *const command[CMD_COUNT] = { "STATUS", "KAT", "MODULES", "TEST-SENSOR-POWER", "CHARGER",
-                                                "TEST-FLASH-STORM", "WIPE ERASE-ALL-NODE-STATE", "PROVISION ",
+                                                "PODWRITE ", "TEST-FLASH-STORM", "WIPE ERASE-ALL-NODE-STATE", "PROVISION ",
                                                 "SENSOR rain on", "SENSOR rain off" };
 
 /* CHARGER: the BQ25798's latest poll (App/charger.c, phase C; "not-fitted" in the other profiles), for
@@ -286,6 +288,43 @@ static void rain_setting(int on)
   if (rc) { APP_PRINTF("#error sensor rc=%d\n", rc); return; }
   mod_rain_set_enabled(on);
   APP_PRINTF("#sensor rain=%s\n", on ? "on" : "off");
+}
+
+/* PODWRITE <port> <type> <serial> WRITE-POD-RECORD (App/pod_write.h): writes a pod's ID record over the
+   mux, then reads it back. It writes the pod's EEPROM, not the node's flash. tools/podwrite.py draws the
+   serial, sends the line and keeps the ledger; the reply is one #podwrite line when the job ends. */
+#define PODWRITE_ARGS (sizeof "PODWRITE " - 1U)
+static void podwrite(const char *line)
+{
+  static const char *const why[] = { "busy (a PODWRITE is running)", "port (not a pod port: 1, 2 or 3)",
+                                     "type (not this port's module type)", "serial (top byte 01, the rest not 0 or all f)" };
+  unsigned port, type; uint64_t serial;
+  if (pod_write_parse(line + PODWRITE_ARGS, &port, &type, &serial))
+  { APP_PRINTF("#error usage: PODWRITE <port> <type> <16 hex serial> " POD_WRITE_CONFIRM "\n"); return; }
+  int rc = pod_write_start((enum wsmp_port)port, (uint16_t)type, serial, time_utc());
+  if (rc != PW_START_OK) { APP_PRINTF("#error podwrite %s\n", why[rc - 1]); return; }
+  APP_PRINTF("#podwrite started port=%u type=%u (JP1 shunt off; the reply comes in a few seconds)\n", port, type);
+}
+
+/* The job's end: ok carries the record as written (the ledger's copy), anything else says why. */
+void pod_write_report(const pod_write_result *r)
+{
+  static const char *const name[PW_OUTCOME_COUNT] = { "ok", "has-record", "no-eeprom", "no-sensor-serial", "write",
+                                                       "timeout", "verify (is the JP1 shunt still on?)" };
+  static char hex[WS_HEX_PER_BYTE * WSMP_RECORD_LEN + 1];   /* static: off the stack */
+  char sn[WS_HEX_PER_BYTE * sizeof r->serial + 1];
+  uint8_t sb[sizeof r->serial];
+  ws_put_be64(sb, r->serial, sizeof sb);
+  ws_hex_text(sb, (int)sizeof sb, sn);
+  if (r->outcome != PW_OK)
+  {
+    APP_PRINTF("#podwrite FAIL port=%u type=%u serial=%s why=%s\n", (unsigned)r->port, (unsigned)r->type, sn,
+               r->outcome < PW_OUTCOME_COUNT ? name[r->outcome] : "?");
+    return;
+  }
+  ws_hex_text(r->image, (int)WSMP_RECORD_LEN, hex);
+  APP_PRINTF("#podwrite ok port=%u type=%u serial=%s bind=%08x crc=%08x record=%s\n", (unsigned)r->port,
+             (unsigned)r->type, sn, (unsigned)r->bind_value, (unsigned)r->crc, hex);
 }
 
 /* #modules, then one #ident line for each module of the descriptor set (the serial, its source, the
@@ -315,11 +354,12 @@ static int refused(int cmd, char *line)
 }
 
 /* The commands that write no flash (before CMD_STORM in the table). */
-static void read_command(int cmd)
+static void read_command(int cmd, const char *line)
 {
   switch (cmd)
   {
     case CMD_STATUS: tx_status(); break;
+    case CMD_PODWRITE: podwrite(line); break;
     case CMD_KAT: APP_PRINTF("#kat %s\n", node_selftest() ? "pass" : "FAIL"); break;
     case CMD_MODULES: modules_line(); break;
     case CMD_CHARGER: charger_cmd(); break;
@@ -350,7 +390,7 @@ void console_line(char *line)
   bench_command(line);   /* TEST-FAULT, TEST-HANG (not in a field build) */
   int cmd = ws_cmd_find(command, CMD_COUNT, line);
   if (refused(cmd, line)) return;
-  if (cmd < CMD_STORM) read_command(cmd);
+  if (cmd < CMD_STORM) read_command(cmd, line);
   else flash_command(cmd, line);
 }
 

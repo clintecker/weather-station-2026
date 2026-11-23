@@ -106,6 +106,11 @@ void model_eeprom_fail_next(int dev, int n);      /* the next n reads NACK their
 void model_eeprom_fail_after(int dev, int skip, int n);   /* the next skip reads are served, then n NACK */
 void model_eeprom_corrupt_next(int dev, int n);   /* the next n reads that cover byte 0x20 flip a bit of it */
 void model_eeprom_corrupt_at(int dev, uint16_t at, int n);   /* the same for byte at */
+void model_eeprom_wp(int dev, int on);           /* WP high: data acknowledged, nothing written */
+void model_eeprom_cycle(int dev, uint32_t ms);   /* a slower write cycle (0: the datasheet's 5 ms) */
+int model_eeprom_busy(int dev);                  /* 1 during a write cycle: the address NACKs */
+uint32_t model_eeprom_page_writes(int dev);      /* writes with data that started a write cycle */
+uint8_t model_eeprom_byte(int dev, uint16_t at);
 /* DEVK_BQ25798 (TI SLUSDV2C): the register file REG00-REG48 at power-on reset (CELL from the PROG
    strap, model_bq25798_cells, default one cell: VREG 4.2 V; ICHG 1 A; REG0F 0xA2; REG10 0xB5 (VAC_OVP 7 V);
    REG15 0xAA; REG17 0x7A; REG18 0x54; REG48

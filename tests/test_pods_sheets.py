@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SHEETS = ROOT / "hardware" / "pods-r1" / "sheets"
-PAGES = 34      # 2 cover, faces, jack breakouts, BMP581 cut, headers, 8 (TH) + 7 (BARO) + 8 (UV), 2 cable pages
+PAGES = 35      # 2 cover, faces, jack breakouts, BMP581 cut, headers, 8 (TH) + 7 (BARO) + 8 (UV), 2 cable pages, W1
 BOB_STEP = ROOT / "hardware" / "tx-stack-r1" / "render" / "models" / "BOB" / "bob14021_board.step"
 PAGES_Q = 23    # 2 cover, box faces, 3 inserts, gland apart, 3 glands, UV window, lead, 3 boards, shunt, O-ring, lids,
                 # shield order, arm, cup + stand + SHT45, UV on the cap, drip loops
@@ -74,7 +74,7 @@ class SessionP(unittest.TestCase):
             for i in range(1, 10):
                 need.add(f"{pod}:wire:w{i}")
         need |= {"BARO:header-cut", "TH:lead-sht45-end", "TH:lead-gland-order", "UV:lead-ltr390-end", "UV:lead-pod-end",
-                 "cable:per-pod"}
+                 "cable:per-pod", "id-write", "id-write:podwrite", "id-write:ledger"}
         self.assertEqual(sorted(need - tags), [], "pages missing from the PDF")
         for p in man["pages"]:
             self.assertTrue(p["title"].strip(), p)

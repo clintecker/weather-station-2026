@@ -180,7 +180,7 @@ def before(c, pg):
              "BETWEEN PODS.",
              "MARK EACH BOARD AND ITS PORT CABLE (BOTH ENDS) WITH ITS TX PORT, AND THE SENSOR LEAD TOO ON TH AND UV (BARO HAS NONE): "
              + PORT_TAGS + ".",
-             "NO POWER IN THIS SESSION. THE METER IS THE ONLY JUDGE. ANYTHING ODD: STOP, PHOTOGRAPH IT, REPORT TO CLAUDE."]
+             "NO POWER IN THIS SESSION (PAGE W1 COMES LATER, WITH THE TX UP). THE METER IS THE ONLY JUDGE. ANYTHING ODD: STOP, PHOTOGRAPH IT, REPORT TO CLAUDE."]
     for i, s in enumerate(rules):
         yy = y + h - 12 - i * (h - 8) / len(rules)
         verdict(c, x + 18, yy, True, 7)
@@ -906,6 +906,50 @@ def cable_meter(c, pg):
     LAB.block(x + 20, yy, x + w - 10, y + h - 30, "bad")
 
 
+def write_ids(c, pg):
+    page(c, "W1", "ID RECORDS: WRITE THEM ONCE THE TX IS UP", "AFTER SESSION 9 STEP 07, ALL 3 PODS "
+         "ON THEIR PORTS. THE ONLY POWERED PAGE.", pg, SLOGANS_P[5])
+    g = Grid(2, 2, heights=[1.4, 0.8])
+    x, y, w, h = panel(c, g.cell(0, 0), 1, ["ONE POD AT A TIME, ITS PORT CABLE IN,", "THE TX RUNNING, THE MAC ON ITS USB."])
+    steps = ["1  Pull that pod's JP1 shunt OFF (U1's WP goes to ground: writable).",
+             "2  On the Mac: .venv/bin/python tools/podwrite.py <TX ST-LINK serial> <POD>",
+             "3  Wait for its line: 'written, crc ...'. It takes a few seconds.",
+             "4  Push the JP1 shunt back ON (protected).",
+             "5  Next pod. When all 3 are done, send MODULES on the TX console.",
+             "The tool draws the serial and writes every try to hardware/pods-r1/serial-ledger.csv. "
+             "Commit that file. A serial is never used twice, failed ones included."]
+    yy = y + h - 50
+    for s_ in steps:
+        lines = wrap_px(s_, w - 30, 9.6)
+        para(c, x + 14, yy, lines, 9.6, 12.5, w=w - 20, what="steps")
+        yy -= 12.5 * len(lines) + 8
+    x, y, w, h = panel(c, g.cell(1, 0), 2, ["WHAT EACH POD GETS. THE TOOL SENDS", "THIS LINE; YOU TYPE ONLY THE POD NAME."])
+    rows = [("POD", "PORT", "THE LINE THE TOOL SENDS")]
+    for name, typ in (("TH", 1), ("BARO", 2), ("UV", 3)):
+        k = PORTS_[name][0]
+        rows.append((name, f"S{k}", f"PODWRITE {typ} {typ} <SERIAL> WRITE-POD-RECORD"))
+    for i, (a_, b_, d_) in enumerate(rows):
+        yy = y + h - 50 - i * 20
+        f_ = "MONO" if i else "HEAD"
+        text(c, x + 14, yy, a_, 9.6, "HEAD", INK if i else GREY)
+        text(c, x + 52, yy, b_, 9.6, "HEAD", INK if i else GREY)
+        text(c, x + 88, yy, d_, 6.8 if i else 9, f_, INK if i else GREY)
+    para(c, x + 14, y + h - 50 - 4 * 20 - 6, wrap_px("TH also gets its SHT45's own serial in the record, so a swapped "
+                                                     "sensor shows up later. No calibration goes in now.", w - 30, 9.4),
+         9.4, 12, w=w - 20, what="th")
+    x, y, w, h = panel(c, g.cell(0, 1, 2), 3, ["MODULES AFTERWARDS: EVERY POD SHOWS source=record status=applied.",
+                                               "IF THE TOOL SAYS 'NOT WRITTEN', READ THE WORD AFTER IT:"], warn=True)
+    fails = [("verify", "The shunt was still ON, or the bytes read back differ. Shunt OFF, run the tool again."),
+             ("has-record", "That pod already has a record. Nothing was written. Leave it."),
+             ("no-eeprom", "No answer at 0x50 on that port. Check the cable on page C2 and U1's solder joints."),
+             ("no-sensor-serial", "TH only: the SHT45 didn't answer. Check the TH lead."),
+             ("refused / no-reply", "Wrong pod on the port, or the TX isn't running this firmware. Ask Claude.")]
+    for i, (k_, v_) in enumerate(fails):
+        yy = y + h - 50 - i * 19
+        text(c, x + 20, yy, k_, 10, "HEAD", INK)
+        text(c, x + 150, yy, v_, 9.6, "ALT", INK)
+
+
 # ------------------------------------------------------------------ the page list
 def build_pages():
     PAGES.clear()
@@ -943,6 +987,8 @@ def build_pages():
     add_page("C1", "PORT CABLES: GLANDS FIRST, THEN CRIMP", ["cable", "cable:per-pod", "cable:crimp-order"], cable_crimp)
     add_page("C2", "PORT CABLES: PIN TO PIN BEFORE POWER", ["cable", "cable:per-pod", "cable:continuity", "cable:reversed"],
              cable_meter)
+    add_page("W1", "ID RECORDS: WRITE THEM ONCE THE TX IS UP", ["id-write", "id-write:podwrite", "id-write:ledger"],
+             write_ids)
 
 
 build_pages()
