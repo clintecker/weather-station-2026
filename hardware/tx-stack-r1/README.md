@@ -374,6 +374,16 @@ These are on hand, so they're not listed:
 | USB-C to micro-B cable (EVM J6) | any | - | 1 | 1 | not checked | - | |
 | Hook-and-loop strap (pack), foam tape (mux) | any | - | 1 each | 1 each | not checked | - | |
 
+## Mounting on the pole
+
+My layout (Clint left it to me, 2026-11-24; the full version is in
+[`../PRINTED-PARTS.md`](../PRINTED-PARTS.md#mounting-on-the-pole)). On the 1 in pole, top about 2.0 m up, top to
+bottom: the weather meter (cross arm east-west, cups east), the radiation shield and the pod bracket on the south
+side, the rain gauge on the north side, then this box, lowest and on the north side. That puts it in the pole's
+shade, so the pack stays cool. It hangs by its back with the lid facing north, lid shade on, its top flange 300 mm
+under the rain gauge's foot, on two SAE 20 hose clamps through the flange slots. The five RJ11 cables come down the
+pole, held by the hose clamps and wire ties, and each ends with a drip loop at least 70 mm below its gland.
+
 ## Mechanical connections
 
 **Rule (Clint, 2026-11-13): each card (B1-B4) can be pulled out independently of every other card, and inspected.**

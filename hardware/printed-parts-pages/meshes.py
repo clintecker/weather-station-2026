@@ -11,7 +11,8 @@ Frames:
 - tx, the hung frame: cage.py's box frame through cage.true_frame() (the real hand), then turned so Zb is up and the
   lid faces -Y. X = Xb - the mounting flanges' centre, Y = -3 - Yb (so Y 0 is the back face, the face on the pole),
   Z = Zb. The pole runs along Z behind the back face, at +Y.
-- meter, the assembly page's frame (build.py assembly_page: the pole's axis on Z at x = y = 0). Bought parts, so
+- meter, the assembly page's frame (build.py assembly_page: the pole's axis on Z at x = y = 0, Z 0 on the ground,
+  north +y, east +x), laid out by build.py and drawn by weather_meter.build(). Bought parts, so
   these are estimated stand-ins (weather_meter.py says which numbers are estimates). The cup rotor and the vane are
   separate meshes whose entries carry pivot = {at, axis} (same frame), so the page can turn them with the wind.
 - shield, assemble.py's shield frame: Z up, the louver plates' axis on Z, Z 0 on the arm's pocket floor. The pole runs
@@ -110,10 +111,16 @@ def tx(out):
                 flange_z=[-cage.T - S.val("mount_flange")[2], cage.H + cage.T + S.val("mount_flange")[2]],
                 back_y=0.0, lid_top_y=-(cage.LID_TOP + cage.T), seam_y=-(cage.SEAM + cage.T),
                 top_wall_z=cage.H + cage.T,
-                # each meter cable's PG-9 gland, its outside end (hung frame): the bottom wall's outer face less the
-                # gland's body and cap (sources gland_pg9 L2, L3)
-                glands={use: [x - XC, -cage.T - y, -cage.T - S.val("gland_pg9")[2] - S.val("gland_pg9")[3]]
-                        for (x, y), use in cage.GLAND_USE.items() if use in ("WIND", "RAIN")})
+                # each RJ11 cable's gland (the meter's PG-9s, the pods' PG-7s), its outside end (hung frame): the
+                # bottom wall's outer face less the gland's body and cap (sources gland_pg9 / gland_pg7 L2, L3)
+                glands={use.split()[-1]: [x - XC, -cage.T - y, -cage.T - cage.GLAND[k][2] - cage.GLAND[k][3]]
+                        for (x, y, k) in cage.GLANDS for (xy, use) in cage.GLAND_USE.items()
+                        if xy == (x, y) and use.split()[-1] in ("WIND", "RAIN", "TH", "UV", "BARO")},
+                # the mounting flanges' slots (hose clamps through them): X of each slot, Z of each flange's slot centres,
+                # slot width x length, the flange's thickness (Y 0 to -thickness)
+                flange_slots=dict(x=[S.val("mount_flange")[6] - XC, S.val("mount_flange")[7] - XC],
+                                  z=[cage.FLANGE_SLOT_Z, cage.H - cage.FLANGE_SLOT_Z],
+                                  w=S.val("mount_flange")[4], l=S.val("mount_flange")[5], t=S.val("mount_flange")[3]))
     (out / "tx.json").write_text(json.dumps(info, indent=1))
 
 
@@ -173,11 +180,28 @@ def shield(out):
                 ex = (nz * (45 if part == "body" else 85)).round(3).tolist()
             put(f"pod-{name.lower()}-{part}", w, f, vol=(solid.val() if hasattr(solid, "val") else solid).Volume(), explode=ex)
 
+    # each pod's port gland, its outside end and outward axis (shield frame): podbox's "gland" opening (the centre on
+    # the outside face) moved out by the PG-7's body and cap (tx-stack-r1 gland_pg7 L2, L3), for the cable runs
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tx_sources", HW / "tx-stack-r1/sources.py")
+    TXS = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(TXS)
+    g7 = TXS.val("gland_pg7")
+    pod_glands = {}
+    for name in ("TH", "BARO", "UV"):
+        R, t = X.box_pose(name)
+        (_k, c, ax), = [o for o in P.openings(name) if o[0] == "gland"]
+        a = R @ np.array(ax)
+        pod_glands[name] = dict(at=(R @ np.array(c) + t + a * (g7[2] + g7[3])).round(3).tolist(), dir=a.round(6).tolist())
+    R, t = X.box_pose("UV")
+    w = P.dims("UV")["window"]
+    wc = R @ np.array([w["c"][0], w["c"][1], P.dims("UV")["z_flat"]]) + t
     slots, y_back, y_front = X.clamp_slots()
     lo_all = min(min(e["lo"][2] for e in entries), 0)
     info = dict(meshes=entries, poses=poses, upright_back_y=float(y_back), lowest_z=float(lo_all),
                 clamp_slots=[list(map(float, s)) for s in slots], cap_top_z=float(X.uv_mount()["top_z"]),
-                checks=X.remix_checks())
+                checks=X.remix_checks(), pod_glands=pod_glands,
+                uv_window=dict(c=wc.round(3).tolist(), r=round(w["recess_d"] / 2, 3)))
     # the saddle and its strap tunnels, for the assembly page's pole placement and its two bracket straps
     up = X.upright()
     info["saddle"] = dict(pole_d=X.POLE_D, pole_axis=list(X.pole_axis(X.POLE_D)),
@@ -195,9 +219,13 @@ def meter(out):
     p = json.loads((out / "params.json").read_text())
     entries = []
     for key, shape, info in W.build(p):
-        v, f = cq_mesh(shape, 0.1, 0.25)
-        write_stl(out / f"{key}.stl", v, f, b"shield-derived: restricted pages only, never git" if key == "pole-straps"
-                  else b"SparkFun SEN-15901 stand-in (estimated)")
+        if hasattr(shape, "to_mesh"):                     # a manifold3d solid (the cables)
+            mm = shape.to_mesh()
+            v, f = np.asarray(mm.vert_properties)[:, :3], np.asarray(mm.tri_verts)
+        else:
+            v, f = cq_mesh(shape, 0.1, 0.25)
+        # placed by the assembly layout, which uses the shield's numbers: restricted pages only
+        write_stl(out / f"{key}.stl", v, f, b"shield-derived: restricted pages only, never git")
         e = dict(key=key, file=f"{key}.stl", frame="world", info=info, **stats(v, f))
         if "pivot" in info:
             e["pivot"] = info["pivot"]

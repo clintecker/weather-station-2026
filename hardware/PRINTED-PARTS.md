@@ -505,6 +505,39 @@ Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (15 tests, OK on 20
 
 ---
 
+## Mounting on the pole
+
+The station isn't mounted anywhere yet, and Clint left the layout to me (2026-11-24), so this is my call. It's drawn
+and checked on the restricted full-assembly page (`hardware/printed-parts-pages/build.py`, the layout constants and
+`layout_checks()`), which has the exact heights. Directions assume the northern hemisphere, so the sun side is south.
+
+- **The pole:** 1 in (25.4), vertical, its top about 2.0 m above the ground.
+- **Top: the SparkFun SEN-15901 weather meter.** Its two-tube mast stands beside the pole's top end on the north
+  side, overlapping it by 160 mm, held by both of the kit's gear clamps (20 and 140 mm below the pole's top). The
+  cross arm sits on the mast's top, about 2.5 m up, and runs east-west: cups on the east end, vane on the west.
+  Wind goes at the top for clean air, and an east-west arm never shades the UV crown (south) or covers the rain
+  gauge (north).
+- **The radiation shield and the pod bracket, south side.** The bracket's V saddle sits on the pole and the arm
+  reaches south, so the UV crown has an open sky toward the sun. The bracket's two zip ties go through its tunnels
+  and round the pole and whatever RJ11 cables pass there, never the mast: the bracket's upright tops out at least
+  20 mm under the mast's foot. I wanted the crown's top 400 mm under the cross arm. The mast is two tubes long and
+  has to start above the bracket, so the crown ends up a little lower than that.
+- **The rain gauge, north side.** On its arm, level, 250 mm under the UV crown's top, with nothing above its funnel.
+  Its clamp goes round the pole, not the mast. The kit's armature is made for its own tube, so check it closes on
+  the 1 in pole; if it doesn't, a hose clamp through it does the job.
+- **The TX box, lowest, north side.** In the pole's shade, so the pack stays cool. It hangs by its back, lid facing
+  north (out from the pole), lid shade on, top flange 300 mm under the rain gauge's foot, on its two flanges with
+  SAE 20 hose clamps (row 10).
+- **Cables.** The wind cable comes from the vane end of the cross arm and down the mast; the rain cable from the
+  gauge along its arm; the three pod cables from the shield group. All five run down the pole, each on its own
+  line round it, held by the bracket's zip ties where they pass it, by plain wire ties no more than about 250 mm
+  apart elsewhere, and by the TX base's hose clamps. Each leaves the pole under the box and ends with a drip loop at
+  least 70 mm below its gland before it goes up into it.
+
+`layout_checks()` fails the page build if any part runs into another (bar the designed contacts: the saddle on the
+pole, the ties through the tunnels, the clamps on the pole and the mast) or if anything is over the rain gauge's
+funnel or the UV crown's window.
+
 ## Attachment points
 
 | # | Joint | Fastener / method | Side A feature | Side B feature | Source |
