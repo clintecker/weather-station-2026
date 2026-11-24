@@ -446,10 +446,17 @@ RESTRICTED = ["printed-pod-bracket", "printed-shield-cap", "printed-shield-stock
 
 # The full assembly. The repo gives the TX box and the shield no position relative to each other on the pole, so the
 # page places them with these, and says so. Both hang on the same side of the pole, facing the same way.
-POLE_D = 42.2            # ASSUMED pole OD: 1-1/4 in pipe, inside the earthing strap's 1/2-2 in range (tx README)
+POLE_D = 25.4            # the pole's OD: about 1 in (Clint, 2026-11-24), inside the SS-GSG9-1 strap's 1/2-2 in range
 POLE_GAP = 250.0         # ASSUMED: the shield's lowest printed point this far above the end of the TX base's top flange
 POLE_BELOW = 150.0       # the pole drawn this far below the TX base's bottom flange
 POLE_ABOVE = 20.0        # and this far above the top of the shield arm's upright
+# The SparkFun SEN-15901 weather meter kit (weather_meter.py: bought, estimated shapes). The repo gives it no position,
+# so these place it the way the kit is normally put up: its own two-tube mast, cross arm with the cups and the vane on
+# top, the rain gauge on its arm lower down, level. All ASSUMED.
+METER_OVERLAP = 200.0    # ASSUMED: the kit's mast foot this far below the pole's top, the mast against the pole's back
+METER_CLAMPS = (40.0, 160.0)  # ASSUMED: the kit's two gear clamps (mast to pole) this far below the pole's top
+METER_RAIN_BELOW = 250.0      # ASSUMED: the rain arm's top this far below the cross arm's top
+METER_DRIP = 70.0        # ASSUMED: each meter cable's drip loop this far below its PG-9 gland
 
 MESHES = HERE / "out" / "_meshes"          # main() points this at OUTDIR/_meshes
 SCENE_SCRIPTS = SCRIPTS.replace("viewer.js", "assembly.js")
@@ -457,21 +464,34 @@ COL = {"tx-base": "#d8cfbd", "tx-lid-outline": "#7fb2d6", "tx-shade": "#fafaf7",
        "tx-bar": "#7b5cc4", "shield-arm": "#e09a3a", "shield-cap": "#d9b03a", "shield-cup": "#c6ccd2",
        "shield-stand": "#9aa3ab", "shield-plate": "#e8ecef", "pod-th-body": "#6fa67a", "pod-th-lid": "#a9d3b1",
        "pod-baro-body": "#4f86b8", "pod-baro-lid": "#9cc2e3", "pod-uv-body": "#b8577a", "pod-uv-lid": "#e0a3b9",
-       "pole": "#7b8288"}
+       "pole": "#7b8288",
+       # bought, not printed: one teal family, so the kit never reads as a print
+       "meter-mast": "#2f7f86", "meter-arm": "#1f6f78", "meter-cups": "#48a9a6", "meter-vane": "#66c2bd",
+       "meter-rain-arm": "#1f6f78", "meter-rain": "#8fd3cc", "meter-clamps": "#b9c4c9", "meter-cables": "#22303a"}
 NAMES = {"tx-base": "TX base (enclosure 4)", "tx-lid-outline": "#905 clear lid (bought; outline only)",
          "tx-shade": "lid shade", "tx-clips": "EVM front clips", "tx-bar": "retention bar",
          "shield-arm": "remixed L-arm (pod bracket)", "shield-cap": "remixed top cap", "shield-cup": "shield base cup",
          "shield-stand": "shield stand", "shield-plate": "louver plates (6)", "pod-th-body": "TH pod body",
          "pod-th-lid": "TH pod lid", "pod-baro-body": "BARO pod body", "pod-baro-lid": "BARO pod lid",
-         "pod-uv-body": "UV crown body", "pod-uv-lid": "UV crown lid (dome)", "pole": "pole (plain cylinder, assumed OD)"}
+         "pod-uv-body": "UV crown body", "pod-uv-lid": "UV crown lid (dome)", "pole": "pole (plain cylinder, about 1 in)",
+         "meter-mast": "mast (two tubes)", "meter-arm": "cross arm (center-mount armature)",
+         "meter-cups": "anemometer (wind cups)", "meter-vane": "wind vane", "meter-rain-arm": "rain gauge arm",
+         "meter-rain": "rain gauge (tipping bucket)", "meter-clamps": "gear clamps (mast to pole)",
+         "meter-cables": "RJ11 cables to the TX box's PG-9 glands"}
+METER_GROUP = "Bought, not printed: SparkFun SEN-15901 weather meter kit (estimated shapes)"
+METER_KEYS = ("meter-mast", "meter-arm", "meter-cups", "meter-vane", "meter-rain-arm", "meter-rain", "meter-clamps",
+              "meter-cables")
 TX_EXPLODE = {"tx-lid-outline": 70, "tx-clips": 110, "tx-bar": 140, "tx-shade": 190}   # mm along -Y, out of the lid
 EYE = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
 
 
-def run_meshes(mode):
+def run_meshes(mode, params=None):
     d = MESHES / mode
     if d.exists():
         shutil.rmtree(d)
+    if params is not None:
+        d.mkdir(parents=True)
+        (d / "params.json").write_text(json.dumps(params, indent=1))
     subprocess.run([sys.executable, "-B", str(HERE / "meshes.py"), mode, str(d)], check=True)
     return json.loads((d / f"{mode}.json").read_text())
 
@@ -583,7 +603,7 @@ def by_key(info):
     out = {}
     for e in info["meshes"]:
         e = dict(e)
-        e["src"] = MESHES / ("tx" if e["frame"] == "hung" else "shield") / e["file"]
+        e["src"] = MESHES / {"hung": "tx", "shield": "shield", "world": "meter"}[e["frame"]] / e["file"]
         out[e["key"]] = e
     return out
 
@@ -758,12 +778,31 @@ def assembly_page(out, tx, sh):
         ents.append(entry(key, e, m=m_sh, explode=[-ex[0], -ex[1], ex[2]]))
     top = dz + max(e["hi"][2] for e in sh["meshes"] if e["key"] == "shield-arm")
     z0, z1 = tx["flange_z"][0] - POLE_BELOW, top + POLE_ABOVE
-    ents.append(entry("pole", None, explode=[0, 0, 0], metal=True,
+    for e in ents:
+        e["group"] = "Context: bought, drawn for scale" if e["key"] == "tx-lid-outline" else "Printed parts"
+    ents.append(entry("pole", None, explode=[0, 0, 0], metal=True, group="Context: bought, drawn for scale",
                       cylinder=dict(r=r, z0=round(z0, 2), z1=round(z1, 2), x=0, y=0)))
-    facts = [("Pole", f"a plain cylinder, Ø{POLE_D:g} assumed (1-1/4 in pipe), Z {z0:.0f} to {z1:.0f}"),
+    # the SparkFun kit, in this page's frame (weather_meter.py); its cables end at the TX box's WIND and RAIN glands
+    glands = {k: [g[0], g[1] - r, g[2]] for k, g in tx["glands"].items()}
+    mt = run_meshes("meter", dict(pole_r=r, pole_top=z1, mast_overlap=METER_OVERLAP, mast_clamps=list(METER_CLAMPS),
+                                  rain_below=METER_RAIN_BELOW, glands=glands, drip=METER_DRIP))
+    km = by_key(mt)
+    mex = {"meter-cups": [0, 0, 120], "meter-vane": [0, 0, 120], "meter-arm": [0, 0, 60], "meter-rain": [0, 60, 40],
+           "meter-rain-arm": [0, 30, 0], "meter-clamps": [60, 0, 0]}
+    for key in METER_KEYS:
+        ents.append(entry(key, km[key], explode=mex.get(key, [0, 0, 0]), group=METER_GROUP, bought=True,
+                          metal=key in ("meter-mast", "meter-clamps")))
+    md, mi = mt["dims"], {e["key"]: e["info"] for e in mt["meshes"]}
+    zm0, zm1 = mi["meter-mast"]["z"]
+    facts = [("Pole", f"a plain cylinder, Ø{POLE_D:g} (about 1 in), Z {z0:.0f} to {z1:.0f}"),
              ("TX box", "back face on the pole, flanges centred on it, lid facing -y (cage.py frames)"),
              ("Shield", f"upright's back face on the pole, raised so its lowest printed point is {POLE_GAP:g} mm above "
-                        "the TX base's top flange (assumed)")]
+                        "the TX base's top flange (assumed)"),
+             ("Weather meter (bought)", f"the kit's mast Z {zm0:.0f} to {zm1:.0f} against the pole's back, cross arm "
+                                        f"at Z {mi['meter-arm']['z']:.0f}, rain arm top at Z {mi['meter-rain-arm']['z']:.0f}"
+                                        " (assumed positions, estimated shapes)"),
+             ("RJ11 runs as drawn", f"wind {mi['meter-cables']['run_mm']['WIND'] / 1000:.2f} m, rain "
+                                    f"{mi['meter-cables']['run_mm']['RAIN'] / 1000:.2f} m, gland to sensor")]
     secs = ['<section><h2>How it\'s placed</h2><ul>'
             '<li><strong>TX box.</strong> Every TX part comes from <code>cage.py</code> in its box frame and goes through '
             '<code>true_frame()</code> (the real hand), then is turned so Zb is up. The base\'s back face (Yb −3) sits on '
@@ -776,21 +815,76 @@ def assembly_page(out, tx, sh):
             'frame, and the TH, BARO and UV boxes go in by <code>remix.box_pose()</code>. remix.py puts the pole behind '
             'the arm\'s upright, so the upright\'s back face sits on the pole\'s surface here.</li>'
             '<li><strong>What the repo doesn\'t say.</strong> Nothing in the code gives the TX box and the shield a '
-            'position relative to each other, or the pole\'s size. This page assumes: a Ø'
-            f'{POLE_D:g} pole; both on the same side of it, facing the same way; and the shield\'s lowest printed point '
+            'position relative to each other. The pole is Ø'
+            f'{POLE_D:g} (about 1 in, Clint\'s figure). This page assumes: both on the same side of it, facing the '
+            'same way; and the shield\'s lowest printed point '
             f'{POLE_GAP:g} mm above the end of the TX base\'s top flange. That gap also clears the AE1 antenna, which '
             'stands about 70 mm above the top wall. Change <code>POLE_D</code> and <code>POLE_GAP</code> in '
             '<code>build.py</code> to move them.</li>'
+            '<li><strong>On the 1 in pole.</strong> Everything still fits. The TX base\'s flanges and the shield arm\'s '
+            'upright sit flat on the pole, and their hose clamps get shorter: about 34 mm across as a circle round the '
+            'pole and a flange, and 34-37 mm round the pole and the arm\'s gusset, so SAE size 20 clamps (19-44 mm). '
+            'The arm\'s slots are only about 4 mm tall, so its band has to be that narrow. The SS-GSG9-1 bonding strap '
+            'takes 1/2-2 in pipe, so it fits.</li>'
             '<li><strong>Not drawn.</strong> Clint\'s printed lid bolts (his STL isn\'t in the repo), the hose clamps, '
-            'screws, glands, boards, cables and the antenna.</li></ul></section>',
+            'screws, glands, boards, the port and solar cables, and the antenna.</li></ul></section>',
+            meter_section(md, mi, r),
             attach_section([1, 3, 4, 6, 10, 14, 17, 18, 23, 24, 25], original=True)]
     return scene_page(out, "printed-assembly", "Full printed assembly", "tx-stack-r1 · pods-r1 · shield",
                       ("test", "assembly view"),
                       "Every 3D-printed part in place on one pole: the TX box with its lid shade, clips and retention "
                       "bar, and the radiation shield with the pod bracket, the TH and BARO boxes, the remixed cap and the "
-                      "UV crown.", ents, secs, facts,
-                      lede="Every 3D-printed part in its real position, on one pole.",
-                      view_note="The TX box and the shield sit on the pole with an assumed spacing (see below).")
+                      "UV crown, plus the SparkFun weather meter kit (bought, not printed) on its own mast.", ents, secs,
+                      facts,
+                      lede="Every 3D-printed part in its real position, on one pole, with the bought SparkFun weather "
+                           "meter kit (teal, estimated shapes) on top.",
+                      view_note="The TX box, the shield and the weather meter sit on the pole at assumed positions "
+                                "(see below). The key groups the bought parts apart from the prints.")
+
+
+def meter_section(md, mi, r):
+    """What the page says about the SparkFun kit: where it is (assumed) and how big (estimated)."""
+    gl, gw, gh = md["GAUGE"]
+    fl, fw, _fd = md["FUNNEL"]
+    loops = " / ".join(f"{d:g}" for d in sorted(set(mi["meter-clamps"]["loop_d"])))
+    dims = [("Mast", f"two steel tubes, Ø{md['MAST_D']:g} x {md['MAST_TUBE_L']:g} each, slid together "
+                     f"{md['MAST_JOIN']:g} mm"),
+            ("Cross arm", f"{md['ARM_L']:g} mm tip to tip; the cups and the vane {md['SENSOR_AT']:g} mm either side "
+                          "of the mast"),
+            ("Anemometer", f"three Ø{md['CUP_D']:g} cups on a {md['CUP_R']:g} mm radius"),
+            ("Wind vane", f"{md['VANE_L']:g} mm, tail fin to arrow tip"),
+            ("Rain gauge", f"{gl:g} x {gw:g} x {gh:g} body, funnel opening {fl:g} x {fw:g}, on a "
+                           f"{md['RAIN_ARM_L']:g} mm arm"),
+            ("RJ11 cables", f"drawn Ø{md['CABLE_D']:g} round (they're flat)")]
+    t = ["| Part | Size used here (mm, all estimated) |", "|---|---|"] + [f"| {a} | {b} |" for a, b in dims]
+    return ('<section><h2>The weather meter kit (bought, not printed)</h2>'
+            '<p>The SparkFun SEN-15901 kit (Argent Data Systems 80422 sensors) is drawn in teal and grouped on its own '
+            'in the key, so it doesn\'t read as a print. The shapes are simple stand-ins from '
+            '<code>hardware/printed-parts-pages/weather_meter.py</code>. <strong>Every size is an estimate.</strong> '
+            'SparkFun\'s datasheet, Argent\'s 80422 datasheet and the hookup guide describe the parts and how they go '
+            'together, but give no dimensions. The only published size is about 72.4 x 20.3 cm overall, from a '
+            'retailer listing, and the sizes here are picked to fit inside that height. Measure the real kit and '
+            'change the numbers in <code>weather_meter.py</code>.</p>' + table_html(t) +
+            '<p>Where it goes is assumed too. The repo gives no position, so these constants in '
+            '<code>build.py</code> place it the way the kit is normally put up:</p><ul>'
+            f'<li><code>METER_OVERLAP</code> = {METER_OVERLAP:g}: the kit\'s mast stands against the back of the pole '
+            '(the side away from the TX box and the shield), its foot this far below the pole\'s top. The cross arm '
+            'sits on the mast\'s top, along x, the cups on +x and the vane on −x.</li>'
+            f'<li><code>METER_CLAMPS</code> = {", ".join(f"{c:g}" for c in METER_CLAMPS)}: the kit\'s two gear clamps '
+            'hold the mast to the pole this far below the pole\'s top. Round a Ø'
+            f'{POLE_D:g} pole and the Ø{md["MAST_D"]:g} mast each band closes to about {loops} mm (as a circle), so '
+            'check the supplied clamps reach that.</li>'
+            f'<li><code>METER_RAIN_BELOW</code> = {METER_RAIN_BELOW:g}: the rain arm\'s top this far below the cross '
+            'arm\'s top. The arm points out along +y, level, so the gauge is clear of the cups and the vane, as '
+            'the hookup guide asks.</li>'
+            f'<li><code>METER_DRIP</code> = {METER_DRIP:g}: the two RJ11 cables run down the mast and the pole\'s +x '
+            'side to the TX box\'s WIND and RAIN PG-9 glands (<code>cage.GLAND_USE</code>), each with a drip loop '
+            'this far below its gland. The cups\' short cable runs under the arm to the vane, which carries both on '
+            'the wind cable (docs/hardware/bench-station-wiring.md section 3). The lengths drawn are in the facts '
+            'above; the kit\'s own cable lengths aren\'t checked here.</li>'
+            '<li>Check before you put it up: with these positions the rain gauge and the cross arm are higher than the '
+            'UV crown, so they could shade part of its sky. Moving the kit up, or turning the rain arm, changes that.</li>'
+            '</ul></section>')
 
 
 def public_guard(out, pages):

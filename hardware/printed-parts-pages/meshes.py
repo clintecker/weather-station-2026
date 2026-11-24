@@ -3,6 +3,7 @@ process, because hardware/tx-stack-r1 and hardware/pods-r1 both have a module ca
 
   .venv-cad/bin/python -B meshes.py tx OUTDIR       our own TX CAD (cage.py), in the hung frame
   .venv-cad/bin/python -B meshes.py shield OUTDIR   the shield (assemble.py, remix.py) and the pod boxes on it
+  .venv-cad/bin/python -B meshes.py meter OUTDIR    the SparkFun SEN-15901 kit (weather_meter.py) from OUTDIR/params.json
 
 Each mode writes binary STLs plus OUTDIR/<mode>.json (one entry per mesh: file, frame, explode direction, numbers).
 
@@ -10,6 +11,8 @@ Frames:
 - tx, the hung frame: cage.py's box frame through cage.true_frame() (the real hand), then turned so Zb is up and the
   lid faces -Y. X = Xb - the mounting flanges' centre, Y = -3 - Yb (so Y 0 is the back face, the face on the pole),
   Z = Zb. The pole runs along Z behind the back face, at +Y.
+- meter, the assembly page's frame (build.py assembly_page: the pole's axis on Z at x = y = 0). Bought parts, so
+  these are estimated stand-ins (weather_meter.py says which numbers are estimates).
 - shield, assemble.py's shield frame: Z up, the louver plates' axis on Z, Z 0 on the arm's pocket floor. The pole runs
   behind the arm's upright, at -Y (remix.py). The pod boxes go in by remix.box_pose().
 
@@ -105,7 +108,11 @@ def tx(out):
     info = dict(meshes=entries, gate=cage.stl_gate(), flange_x=[fx0 - XC, fx1 - XC],
                 flange_z=[-cage.T - S.val("mount_flange")[2], cage.H + cage.T + S.val("mount_flange")[2]],
                 back_y=0.0, lid_top_y=-(cage.LID_TOP + cage.T), seam_y=-(cage.SEAM + cage.T),
-                top_wall_z=cage.H + cage.T)
+                top_wall_z=cage.H + cage.T,
+                # each meter cable's PG-9 gland, its outside end (hung frame): the bottom wall's outer face less the
+                # gland's body and cap (sources gland_pg9 L2, L3)
+                glands={use: [x - XC, -cage.T - y, -cage.T - S.val("gland_pg9")[2] - S.val("gland_pg9")[3]]
+                        for (x, y), use in cage.GLAND_USE.items() if use in ("WIND", "RAIN")})
     (out / "tx.json").write_text(json.dumps(info, indent=1))
 
 
@@ -173,7 +180,23 @@ def shield(out):
     (out / "shield.json").write_text(json.dumps(info, indent=1))
 
 
+# ---------------------------------------------------------------- meter
+def meter(out):
+    sys.path.insert(0, str(HERE))
+    import weather_meter as W
+    p = json.loads((out / "params.json").read_text())
+    entries = []
+    for key, shape, info in W.build(p):
+        v, f = cq_mesh(shape, 0.1, 0.25)
+        write_stl(out / f"{key}.stl", v, f, b"SparkFun SEN-15901 stand-in (estimated)")
+        entries.append(dict(key=key, file=f"{key}.stl", frame="world", info=info, **stats(v, f)))
+        print(f"  meter {key}: {len(f)} triangles")
+    dims = {k: getattr(W, k) for k in ("MAST_D", "MAST_TUBE_L", "MAST_JOIN", "ARM_L", "SENSOR_AT", "CUP_D", "CUP_R",
+                                       "VANE_L", "GAUGE", "FUNNEL", "RAIN_ARM_L", "CABLE_D")}
+    (out / "meter.json").write_text(json.dumps(dict(meshes=entries, dims=dims), indent=1))
+
+
 if __name__ == "__main__":
     mode, outdir = sys.argv[1], Path(sys.argv[2])
     outdir.mkdir(parents=True, exist_ok=True)
-    {"tx": tx, "shield": shield}[mode](outdir)
+    {"tx": tx, "shield": shield, "meter": meter}[mode](outdir)

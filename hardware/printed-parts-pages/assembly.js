@@ -1,6 +1,7 @@
 // The scene viewer for the printed-parts pages that show several parts in place (three.js r128).
 // scene.json: {meshes:[{file|cylinder, key, label, color, opacity, m:[12 row-major 3x4], explode:[x,y,z],
-//               instances:[[dx,dy,dz]...], instance_explode:[[x,y,z]...], hidden, note}], explode_max}
+//               instances:[[dx,dy,dz]...], instance_explode:[[x,y,z]...], hidden, note, group, bought}], explode_max}
+// group: the key puts the entry under that heading, with show/hide buttons for the group; bought: a striped swatch.
 // Model space is mm with Z up. Each mesh goes through its own m, then moves by explode * the slider.
 (function(){
   const el=document.getElementById('view'), status=document.getElementById('status');
@@ -63,6 +64,23 @@
     return M;
   }
 
+  const groups={};
+  function groupBox(name){   // one row per group in the key, with its own show/hide buttons
+    if(!name) return legend;
+    if(groups[name]) return groups[name].box;
+    const g=document.createElement('div'); g.className='lgroup';
+    const h=document.createElement('span'); h.className='lgroup-h'; h.textContent=name;
+    const on=document.createElement('button'); on.type='button'; on.textContent='show';
+    const off=document.createElement('button'); off.type='button'; off.textContent='hide';
+    const box=document.createElement('div'); box.className='lgroup-keys';
+    g.append(h,on,off,box); legend.appendChild(g);
+    const cbs=[]; groups[name]={box,cbs};
+    const flip=v=>cbs.forEach(cb=>{if(cb.checked!==v){cb.checked=v;cb.dispatchEvent(new Event('change'));}});
+    on.addEventListener('click',()=>flip(true)); off.addEventListener('click',()=>flip(false));
+    on.setAttribute('aria-label','show every part in: '+name); off.setAttribute('aria-label','hide every part in: '+name);
+    return box;
+  }
+
   function addLegend(e,objs){
     if(!legend) return;
     const id='show-'+e.key;
@@ -70,7 +88,9 @@
     const cb=document.createElement('input'); cb.type='checkbox'; cb.id=id; cb.checked=!e.hidden;
     const sw=document.createElement('span'); sw.className='sw'; sw.style.background=e.color; if(e.opacity!=null&&e.opacity<1) sw.style.opacity=0.55;
     const tx=document.createElement('span'); tx.textContent=e.label+(e.note?' ('+e.note+')':'');
-    lab.append(cb,sw,tx); legend.appendChild(lab);
+    if(e.bought) sw.classList.add('bought');
+    lab.append(cb,sw,tx); groupBox(e.group).appendChild(lab);
+    if(e.group) groups[e.group].cbs.push(cb);
     const set=()=>objs.forEach(o=>{o.visible=cb.checked;});
     cb.addEventListener('change',set); set();
     return cb;

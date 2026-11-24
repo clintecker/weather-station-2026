@@ -481,7 +481,8 @@ Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (11 tests, OK on 20
 - Print: on the upright's back face (`ARM_PRINT_UP`), because the new faces hang below the base plate. In that pose
   every face and tab is a wall standing on the bed.
 - Pole: a hose clamp through a pair of slots in the arm's upright, round the pole. The clamp's envelope is assumed
-  (`pole_clamp_env` 12 x 2, TBD), and the TH and BARO boxes keep 5 mm from it.
+  (`pole_clamp_env` 12 x 2, TBD), and the TH and BARO boxes keep 5 mm from it. The pole is about 1 in: each band closes
+  to about 34 mm (37 mm round the gusset). The slots are about 4 mm tall, so the band must be that narrow.
 - Material: not stated in the code.
 
 ---
@@ -499,7 +500,7 @@ Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (11 tests, OK on 20
 | 7 | Cards → base | slide in the slots; the retention bar stops them backing out | card edges | left-wall slots, right-post slots | `parts()` |
 | 8 | Backplane → base | none: the plugged cards hold it | board edges | pads, groove, post slot | `backplane_checks` |
 | 9 | Pack → tray | hook-and-loop strap | pack #353 | two 3 x 20 strap slots, 45° lip | `STRAP` |
-| 10 | TX base → pole | 2 stainless hose clamps (or straps) | mounting flanges, two 3.5 x 14 slots each | pole | `mount_flange` |
+| 10 | TX base → pole | 2 stainless hose clamps (or straps), SAE size 20 (19-44 mm), band 12.7 or narrower: each closes to about 34 mm round the 1 in pole and the flange | mounting flanges, two 3.5 x 14 slots each | pole (about 1 in, 25.4) | `mount_flange` |
 | 11 | Glands → base / pods | PG-7 #762 (Ø13.0) and PG-9 #761 (Ø15.5), locknut inside | gland thread | wall hole | `GLANDS`, `gland` |
 | 12 | Vent → base | M12 x 1.5 screw-in ePTFE vent, Amphenol LTW VENT-PS1YBK-N8002 | vent thread | Ø12.5 hole at (50, 85) | `enc_glands`, `vent` |
 | 13 | SMA bulkhead → base | bulkhead nut, plus the bonding lug (Panduit PV14-14R-L) on the outside thread | jack | Ø6.44 hole, Ø14.2 nut seat | `sma_bulkhead` |
@@ -513,7 +514,7 @@ Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (11 tests, OK on 20
 | 21 | UV window → crown lid | DOWSIL 3145 RTV bed, 24 h cure | Ø20 x 1 JGS1 disc | Ø20.3 x 1.0 recess, 1.5 ledge | `uv_window`, `uv_window_seal` |
 | 22 | ePTFE vents → BARO / crown | adhesive (Gore VE70510), on a clean flat seat | vent | Ø12.4 x 0.4 seats | `baro_eptfe`, `eptfe_seat` |
 | 23 | UV crown → remixed cap | 4 x M3 x 10 pan head A2 up from inside the cap, through the counterbores, 5.0 grip | cap's boss seats | floor-boss inserts on r 31 | `pod_mount_screw`, `remix.uv_mount` |
-| 24 | Remixed arm → pole | hose clamp through the upright's slots (envelope assumed) | upright slots, gusset | pole | `pole_clamp_env` |
+| 24 | Remixed arm → pole | hose clamp through the upright's slots (envelope assumed), band 4 mm wide or less, closing to about 34-37 mm on the 1 in pole | upright slots, gusset | pole (about 1 in, 25.4) | `pole_clamp_env` |
 | 25 | Base bond → pole | 14 AWG green from the SMA bulkhead's lug to a SatelliteSale SS-GSG9-1 strap | bonding lug | pole | README, ASSEMBLY.md |
 
 ---

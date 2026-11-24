@@ -1016,7 +1016,9 @@ def assembly_sheet():
          f"{cage.SMA[1] - 4.0 - cage.EVM_Z0 - 1.6:.1f} mm over the EVM's lid-right corner, where SLUUCB5E Figure 4-1 "
          "has only silk (JP9, the nearest part, is about 4 mm off; `cage.py` checks it).",
          "8. Mount the box with hose clamps or straps through the two slots in each mounting flange (the short ends, "
-         "in the floor plane). Put the lid on with its four printed bolts.",
+         "in the floor plane). The pole is about 1 in (25.4 mm): use stainless worm-drive clamps, SAE size 20 (about "
+         "19-44 mm), band 12.7 mm wide or less. Each one closes to about 34 mm round the pole and the flange. Put the "
+         "lid on with its four printed bolts.",
          "",
          "   The antenna, AE1: " + next(p for p in model.PARTS if p["ref"] == "AE1")["part"] + ". Screw it onto the "
          "bulkhead jack finger-tight plus a quarter turn, fold it at its hinge so it stands vertical, tip up, then wrap "
@@ -1024,8 +1026,8 @@ def assembly_sheet():
          "over it (the datasheet gives no UV rating).",
          "",
          "   The bond to the pole (required: the pole is metal and earthed). 14 AWG stranded copper, green THWN-2, "
-         "from the lug on the bulkhead to a SatelliteSale SS-GSG9-1 grounding strap on the pole (1/2-2 in pipe; the "
-         "SS-GSG12-1 for a bigger pole), on bare metal with Ideal Noalox under it. Short and straight, no coil. Check "
+         "from the lug on the bulkhead to a SatelliteSale SS-GSG9-1 grounding strap on the pole (1/2-2 in pipe, so it fits the 1 in "
+         "pole; the SS-GSG12-1 for a pole over 2 in), on bare metal with Ideal Noalox under it. Short and straight, no coil. Check "
          "it at 1 ohm or less from the bulkhead's body to the pole.", "",
          f"## 3. Cards, bottom to top: {order}", "",
          "**Labels (the slot key's colour code).** Each card gets a dot on its front edge. The same colour goes "

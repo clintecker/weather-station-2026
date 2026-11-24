@@ -79,6 +79,12 @@ section{display:flex;flex-direction:column;gap:12px}
 .legend .key{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
 .legend input{accent-color:var(--accent);width:16px;height:16px}
 .sw{width:14px;height:14px;border-radius:3px;border:1px solid var(--line);display:inline-block;flex:none}
+.sw.bought{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 5px)}
+.lgroup{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding-top:6px;border-top:1px dashed var(--line)}
+.lgroup:first-child{border-top:0;padding-top:0}
+.lgroup-h{font-family:var(--mono);font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.lgroup button{font:inherit;font-size:.8rem;padding:2px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer}
+.lgroup-keys{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px 18px}
 .restricted{font-size:.88rem;border:1px solid var(--no-fg);background:var(--no-bg);color:var(--no-fg);border-radius:8px;padding:8px 12px;max-width:75ch}
 </style>
 </head><body>

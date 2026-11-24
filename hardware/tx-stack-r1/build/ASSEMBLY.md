@@ -37,11 +37,11 @@ The EVM ships set for two cells. Do these in order, with nothing connected:
 
    Inside, leave a service loop in the space in front of the cards. Outside, leave a drip loop below each gland before you tie the cable to the pole. Each cable runs from its plug to the right column, down it, and left under the pack tray to its gland (cage/shelves-spec.md).
 7. The coax: fit AD1 on the Wio-E5 mini's SMA, its arm toward the lid, and the 135110 plug on AD1. Bend the cable right in front of the cards and run it down the right column to the bulkhead low in the right wall. Clip it to the right corner post. The 6 in cable reaches. Clint checked it on 2026-11-17: it fits the low bulkhead with no tight bend. The straight plug on the bulkhead's inner end passes about 6.4 mm over the EVM's lid-right corner, where SLUUCB5E Figure 4-1 has only silk (JP9, the nearest part, is about 4 mm off; `cage.py` checks it).
-8. Mount the box with hose clamps or straps through the two slots in each mounting flange (the short ends, in the floor plane). Put the lid on with its four printed bolts.
+8. Mount the box with hose clamps or straps through the two slots in each mounting flange (the short ends, in the floor plane). The pole is about 1 in (25.4 mm): use stainless worm-drive clamps, SAE size 20 (about 19-44 mm), band 12.7 mm wide or less. Each one closes to about 34 mm round the pole and the flange. Put the lid on with its four printed bolts.
 
    The antenna, AE1: Taoglas TI.96.A113 (915 MHz dipole, IP67, hinged SMA(M), screwed straight onto the bulkhead outside, folded to point up). Screw it onto the bulkhead jack finger-tight plus a quarter turn, fold it at its hinge so it stands vertical, tip up, then wrap the coupling nut, the hinge and the thread in 3M Scotch 23 self-amalgamating tape, with 3M Scotch Super 33+ over it (the datasheet gives no UV rating).
 
-   The bond to the pole (required: the pole is metal and earthed). 14 AWG stranded copper, green THWN-2, from the lug on the bulkhead to a SatelliteSale SS-GSG9-1 grounding strap on the pole (1/2-2 in pipe; the SS-GSG12-1 for a bigger pole), on bare metal with Ideal Noalox under it. Short and straight, no coil. Check it at 1 ohm or less from the bulkhead's body to the pole.
+   The bond to the pole (required: the pole is metal and earthed). 14 AWG stranded copper, green THWN-2, from the lug on the bulkhead to a SatelliteSale SS-GSG9-1 grounding strap on the pole (1/2-2 in pipe, so it fits the 1 in pole; the SS-GSG12-1 for a pole over 2 in), on bare metal with Ideal Noalox under it. Short and straight, no coil. Check it at 1 ohm or less from the bulkhead's body to the pole.
 
 ## 3. Cards, bottom to top: B4 POWER, B2 PORTS B + METERS, B1 PORTS A, B3 CORE (top)
 

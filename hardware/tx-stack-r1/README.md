@@ -327,7 +327,7 @@ bulkhead. This is about induced surges and static, not about surviving a strike 
   - **Wire:** 14 AWG stranded copper, green THWN-2 (rated for sun), as short and straight as you can, with no sharp
     bends and no coil. Crimp the lug on, and heat-shrink the crimp.
   - **Pole clamp:** a SatelliteSale SS-GSG9-1 grounding strap (adjustable, for 1/2-2 in pipe, set-screw stud for
-    10-14 AWG). For a pole over 2 in, use its 12 in version, SS-GSG12-1. It's galvanised steel: I found no
+    10-14 AWG). It fits the station's pole, which is about 1 in. For a pole over 2 in, use its 12 in version, SS-GSG12-1. It's galvanised steel: I found no
     adjustable stainless earthing strap sold in hobby channels. Clean the pole to bare metal under it and smear the
     contact with an antioxidant paste (Ideal Noalox) before you tighten it.
   - Session 8 step 14 has the steps. `MAINTENANCE.md` has the yearly check.
@@ -368,7 +368,7 @@ These are on hand, so they're not listed:
 | SMA right-angle adapter (AD1) | Amphenol RF 132172 | ACX1249-ND | 1 | 1 | 10,603 | 20.40 | Pending Clint's measurement of the 135110 plug length. Its arm points toward the lid. |
 | Cable glands PG-7 (round port cables) and PG-9 (flat weather-meter cables, seal out, packed) | Adafruit #762 and #761 (Clint has one of each), or LAPP 53111000 (M12) for the PG-7s | 2181-53111000-ND | 5 PG-7 + 2 PG-9 | 5 PG-7 + 1 PG-9 | LAPP not stocked (2 weeks) | bulk only | Need is from `cage.py` `GLANDS` (enclosure 4). With one of each on hand, this buy leaves one spare PG-7 and no spare PG-9. Add silicone or split grommets for the two flat cables. |
 | Blanking pin for the spare S4 PG-7 | dowel pin ISO 8734 4 x 20, A1 stainless | - | 1 | 1 | not checked | - | S4 has no pod yet, and an empty PG-7 doesn't seal. The pin sits in the gland's seal (3.0-4.3 mm) with the cap tightened until a pod is added (`cage.GLAND_BLANK`, sources `gland_blank`). |
-| Hose clamps for the mounting flanges' slots | stainless, to suit the pole | - | 2 | 2 | - | - | The two on hand are for the shield arm. |
+| Hose clamps for the mounting flanges' slots | stainless worm-drive, SAE size 20 (about 3/4-1-3/4 in, 19-44 mm), band 12.7 mm wide or less | - | 2 | 2 | - | - | The pole is about 1 in (25.4 mm). Round it and the flange between one flange's two slots (27.5 mm apart, 3.5 x 14), each band closes to about 34 mm as a circle, mid-range for a size 20. The 14 mm slots take a band up to 12.7 mm. The two on hand were bought for the shield arm, but its slots are only about 4 mm tall (pods-r1 `pole_clamp_env`), so check which band fits where. |
 | Pressure-equalising vent | Amphenol LTW VENT-PS1YBK-N8002 (M12 x 1.5, ePTFE) | 1754-VENT-PS1YBK-N8002-ND | 1 | 1 | 0 on the 2026-11-23 check (more were due 2026-11-20) | 7.31 | In the bottom wall's existing hole (`cage.VENT`). Check its panel hole against 12.46 mm. |
 | Lid shade | printed, white PETG (`cage/stl/lid-shade.stl`) | - | 1 | - | - | - | Print plate down. Clint's own PETG. |
 | USB-C to micro-B cable (EVM J6) | any | - | 1 | 1 | not checked | - | |
