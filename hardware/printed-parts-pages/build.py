@@ -467,6 +467,7 @@ COL = {"tx-base": "#d8cfbd", "tx-lid-outline": "#7fb2d6", "tx-shade": "#fafaf7",
        "pole": "#7b8288",
        # bought, not printed: one teal family, so the kit never reads as a print
        "meter-mast": "#2f7f86", "meter-arm": "#1f6f78", "meter-cups": "#48a9a6", "meter-vane": "#66c2bd",
+       "meter-cups-housing": "#2a8f8c", "meter-vane-housing": "#2a8f8c",
        "meter-rain-arm": "#1f6f78", "meter-rain": "#8fd3cc", "meter-clamps": "#b9c4c9", "meter-cables": "#22303a"}
 NAMES = {"tx-base": "TX base (enclosure 4)", "tx-lid-outline": "#905 clear lid (bought; outline only)",
          "tx-shade": "lid shade", "tx-clips": "EVM front clips", "tx-bar": "retention bar",
@@ -475,12 +476,18 @@ NAMES = {"tx-base": "TX base (enclosure 4)", "tx-lid-outline": "#905 clear lid (
          "pod-th-lid": "TH pod lid", "pod-baro-body": "BARO pod body", "pod-baro-lid": "BARO pod lid",
          "pod-uv-body": "UV crown body", "pod-uv-lid": "UV crown lid (dome)", "pole": "pole (plain cylinder, about 1 in)",
          "meter-mast": "mast (two tubes)", "meter-arm": "cross arm (center-mount armature)",
-         "meter-cups": "anemometer (wind cups)", "meter-vane": "wind vane", "meter-rain-arm": "rain gauge arm",
+         "meter-cups": "anemometer cup rotor (turns)", "meter-vane": "wind vane (turns)",
+         "meter-cups-housing": "anemometer spindle housing", "meter-vane-housing": "wind vane spindle housing", "meter-rain-arm": "rain gauge arm",
          "meter-rain": "rain gauge (tipping bucket)", "meter-clamps": "gear clamps (mast to pole)",
          "meter-cables": "RJ11 cables to the TX box's PG-9 glands"}
 METER_GROUP = "Bought, not printed: SparkFun SEN-15901 weather meter kit (estimated shapes)"
-METER_KEYS = ("meter-mast", "meter-arm", "meter-cups", "meter-vane", "meter-rain-arm", "meter-rain", "meter-clamps",
-              "meter-cables")
+METER_KEYS = ("meter-mast", "meter-arm", "meter-cups-housing", "meter-cups", "meter-vane-housing", "meter-vane",
+              "meter-rain-arm", "meter-rain", "meter-clamps", "meter-cables")
+METER_MOVES = {"meter-cups": "cups", "meter-vane": "vane"}   # assembly.js turns these about their pivots with the wind
+# The anemometer's published factor (SparkFun SEN-15901 / Argent 80422 datasheets): one switch closure per second is
+# 2.4 km/h, and the cups close the switch once a turn, so one turn a second is 2.4 km/h (about 0.667 m/s).
+CUPS_KMH_PER_HZ = 2.4
+WIND_DRAW_HZ = 2.5       # the page draws the rotor no faster than this (turns a second), so the cups stay readable
 TX_EXPLODE = {"tx-lid-outline": 70, "tx-clips": 110, "tx-bar": 140, "tx-shade": 190}   # mm along -Y, out of the lid
 EYE = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
 
@@ -520,6 +527,17 @@ def entry(key, info=None, src=None, m=None, explode=(0, 0, 0), hidden=False, not
     return e
 
 
+def wind_rail():
+    """The wind controls for the assembly page (assembly.js drives them). North is the assembly frame's +y."""
+    return ('<div class="rail" aria-label="Wind">'
+            '<label for="wind-speed">wind <input type="range" id="wind-speed" min="0" max="20" step="0.5" value="4">'
+            ' <output id="wind-speed-v"></output></label>'
+            '<label for="wind-dir">from <input type="range" id="wind-dir" min="0" max="359" step="1" value="270">'
+            ' <output id="wind-dir-v"></output></label>'
+            '<label for="gusty"><input type="checkbox" id="gusty"> gusty</label>'
+            '</div>')
+
+
 def scene_rail(explode=True):
     return ('<div class="rail">'
             + ('<label for="explode">take apart <input type="range" id="explode" min="0" max="1" step="0.01" value="0">'
@@ -536,7 +554,7 @@ def scene_rail(explode=True):
 
 
 def scene_page(out, slug, title, sub, b, desc, entries, sections, facts=(), downloads=(), view_note="", lede=None,
-               explode=True):
+               explode=True, wind=False):
     """A page with the scene viewer: entries go to scene.json (their STLs copied in), sections are HTML strings."""
     d = out / slug
     if d.exists():
@@ -556,7 +574,10 @@ def scene_page(out, slug, title, sub, b, desc, entries, sections, facts=(), down
         meshes.append(e)
     for src, name in downloads:
         shutil.copy2(src, d / name)
-    (d / "scene.json").write_text(json.dumps(dict(meshes=meshes)))
+    scene = dict(meshes=meshes)
+    if wind:
+        scene["wind"] = dict(kmh_per_hz=CUPS_KMH_PER_HZ, north=[0, 1, 0], max_draw_hz=WIND_DRAW_HZ)
+    (d / "scene.json").write_text(json.dumps(scene))
     shutil.copy2(HERE / "assembly.js", d / "assembly.js")
     body = [f'<header><a class="back" href="{HOST + INDEX}/" target="_top">&larr; all printed parts</a>'
             f'<div class="eyebrow">printed part · {html.escape(sub)}</div><h1>{html.escape(title)}</h1>{badge(b)}'
@@ -567,12 +588,16 @@ def scene_page(out, slug, title, sub, b, desc, entries, sections, facts=(), down
                     'it is in git.</p>')
     hint = ("Drag to turn, pinch or scroll to zoom, right-drag to pan. Tick a part in the key to show or hide it. "
             + ("&lsquo;Take apart&rsquo; pulls the parts away from each other. " if explode else "")
-            + "&lsquo;Cut&rsquo; slices the view across x, y or z (mm, Z up).")
+            + "&lsquo;Cut&rsquo; slices the view across x, y or z (mm, Z up)."
+            + (" &lsquo;Wind&rsquo; turns the cups and the vane: speed in m/s with the cups' real rpm (drawn no faster "
+               f"than {WIND_DRAW_HZ * 60:g} rpm so you can follow them), direction the wind comes from, in degrees from north, which is "
+               "+y here (the way the rain arm points; east is +x). &lsquo;Gusty&rsquo; lets both wander a little."
+               if wind else ""))
     if view_note:
         hint += " " + html.escape(view_note)
     body.append('<figure class="stage">'
                 f'<div id="view" role="img" aria-label="3D model of the {html.escape(title)}; drag to turn"></div>'
-                '<div id="status">loading the model…</div>' + scene_rail(explode)
+                '<div id="status">loading the model…</div>' + scene_rail(explode) + (wind_rail() if wind else "")
                 + '<div class="legend" id="legend" aria-label="Key: show or hide each part"></div>'
                 f'<div class="hint">{hint}</div></figure>')
     if facts or downloads:
@@ -787,11 +812,13 @@ def assembly_page(out, tx, sh):
     mt = run_meshes("meter", dict(pole_r=r, pole_top=z1, mast_overlap=METER_OVERLAP, mast_clamps=list(METER_CLAMPS),
                                   rain_below=METER_RAIN_BELOW, glands=glands, drip=METER_DRIP))
     km = by_key(mt)
-    mex = {"meter-cups": [0, 0, 120], "meter-vane": [0, 0, 120], "meter-arm": [0, 0, 60], "meter-rain": [0, 60, 40],
+    mex = {"meter-cups": [0, 0, 120], "meter-vane": [0, 0, 120], "meter-arm": [0, 0, 60],
+           "meter-cups-housing": [0, 0, 60], "meter-vane-housing": [0, 0, 60], "meter-rain": [0, 60, 40],
            "meter-rain-arm": [0, 30, 0], "meter-clamps": [60, 0, 0]}
     for key in METER_KEYS:
+        mv = dict(pivot=km[key]["pivot"], moves=METER_MOVES[key]) if key in METER_MOVES else {}
         ents.append(entry(key, km[key], explode=mex.get(key, [0, 0, 0]), group=METER_GROUP, bought=True,
-                          metal=key in ("meter-mast", "meter-clamps")))
+                          metal=key in ("meter-mast", "meter-clamps"), **mv))
     md, mi = mt["dims"], {e["key"]: e["info"] for e in mt["meshes"]}
     zm0, zm1 = mi["meter-mast"]["z"]
     facts = [("Pole", f"a plain cylinder, Ø{POLE_D:g} (about 1 in), Z {z0:.0f} to {z1:.0f}"),
@@ -839,7 +866,7 @@ def assembly_page(out, tx, sh):
                       lede="Every 3D-printed part in its real position, on one pole, with the bought SparkFun weather "
                            "meter kit (teal, estimated shapes) on top.",
                       view_note="The TX box, the shield and the weather meter sit on the pole at assumed positions "
-                                "(see below). The key groups the bought parts apart from the prints.")
+                                "(see below). The key groups the bought parts apart from the prints.", wind=True)
 
 
 def meter_section(md, mi, r):
@@ -882,6 +909,13 @@ def meter_section(md, mi, r):
             'this far below its gland. The cups\' short cable runs under the arm to the vane, which carries both on '
             'the wind cable (docs/hardware/bench-station-wiring.md section 3). The lengths drawn are in the facts '
             'above; the kit\'s own cable lengths aren\'t checked here.</li>'
+            '<li>The wind controls turn the cup rotor and the vane, each about its own spindle. Each cup\'s open side '
+            'faces the anticlockwise way round (seen from above), and a cup catches more wind on its open side than on '
+            'its round back, so the rotor turns clockwise seen from above. Speed to rpm uses the datasheet\'s '
+            f'{CUPS_KMH_PER_HZ:g} km/h per switch closure per second, one closure a turn, so 1 m/s is '
+            f'{3.6 / CUPS_KMH_PER_HZ * 60:g} rpm. The vane\'s arrow points into the wind, its tail downwind. North '
+            'is +y in this frame. The rain gauge is drawn as a closed box, with no tipping bucket inside, so it '
+            'doesn\'t move.</li>'
             '<li>Check before you put it up: with these positions the rain gauge and the cross arm are higher than the '
             'UV crown, so they could shade part of its sky. Moving the kit up, or turning the rain arm, changes that.</li>'
             '</ul></section>')

@@ -12,7 +12,8 @@ Frames:
   lid faces -Y. X = Xb - the mounting flanges' centre, Y = -3 - Yb (so Y 0 is the back face, the face on the pole),
   Z = Zb. The pole runs along Z behind the back face, at +Y.
 - meter, the assembly page's frame (build.py assembly_page: the pole's axis on Z at x = y = 0). Bought parts, so
-  these are estimated stand-ins (weather_meter.py says which numbers are estimates).
+  these are estimated stand-ins (weather_meter.py says which numbers are estimates). The cup rotor and the vane are
+  separate meshes whose entries carry pivot = {at, axis} (same frame), so the page can turn them with the wind.
 - shield, assemble.py's shield frame: Z up, the louver plates' axis on Z, Z 0 on the arm's pocket floor. The pole runs
   behind the arm's upright, at -Y (remix.py). The pod boxes go in by remix.box_pose().
 
@@ -189,7 +190,10 @@ def meter(out):
     for key, shape, info in W.build(p):
         v, f = cq_mesh(shape, 0.1, 0.25)
         write_stl(out / f"{key}.stl", v, f, b"SparkFun SEN-15901 stand-in (estimated)")
-        entries.append(dict(key=key, file=f"{key}.stl", frame="world", info=info, **stats(v, f)))
+        e = dict(key=key, file=f"{key}.stl", frame="world", info=info, **stats(v, f))
+        if "pivot" in info:
+            e["pivot"] = info["pivot"]
+        entries.append(e)
         print(f"  meter {key}: {len(f)} triangles")
     dims = {k: getattr(W, k) for k in ("MAST_D", "MAST_TUBE_L", "MAST_JOIN", "ARM_L", "SENSOR_AT", "CUP_D", "CUP_R",
                                        "VANE_L", "GAUGE", "FUNNEL", "RAIN_ARM_L", "CABLE_D")}

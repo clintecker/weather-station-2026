@@ -2,6 +2,10 @@
 // scene.json: {meshes:[{file|cylinder, key, label, color, opacity, m:[12 row-major 3x4], explode:[x,y,z],
 //               instances:[[dx,dy,dz]...], instance_explode:[[x,y,z]...], hidden, note, group, bought}], explode_max}
 // group: the key puts the entry under that heading, with show/hide buttons for the group; bought: a striped swatch.
+// pivot:{at:[x,y,z], axis:[x,y,z]} (scene frame, after m) and moves:'cups'|'vane': the mesh turns about that axis with
+// the wind. scene.json's wind:{kmh_per_hz, north:[x,y,z], max_draw_hz} turns on the wind controls (#wind-speed,
+// #wind-dir, #gusty). The cup rotor turns clockwise seen from above (its cups' open sides face anticlockwise); the vane's
+// arrow points along +y at rest, which is north, and turns to point where the wind comes from.
 // Model space is mm with Z up. Each mesh goes through its own m, then moves by explode * the slider.
 (function(){
   const el=document.getElementById('view'), status=document.getElementById('status');
@@ -20,7 +24,7 @@
   const fill=new THREE.DirectionalLight(0xffffff,0.3); fill.position.set(-400,300,-100); scene.add(fill);
   const model=new THREE.Group(); scene.add(model);
   const clip=new THREE.Plane(new THREE.Vector3(-1,0,0),0);
-  const mats=[], pieces=[];
+  const mats=[], pieces=[], movers=[];
   let cfg=null, box=null, ctr=new THREE.Vector3(), radius=100;
 
   function resize(){const w=el.clientWidth,h=el.clientHeight;renderer.setSize(w,h,false);renderer.domElement.style.width='100%';renderer.domElement.style.height='100%';cam.aspect=w/h;cam.updateProjectionMatrix();}
@@ -113,7 +117,12 @@
       const inst=e.instances||[[0,0,0]], iex=e.instance_explode||inst.map(()=>[0,0,0]);
       inst.forEach((d,i)=>{
         const mesh=new THREE.Mesh(g,m); mesh.applyMatrix4(M);
-        const obj=new THREE.Group(); obj.add(mesh); model.add(obj);
+        const obj=new THREE.Group(); model.add(obj);
+        if(e.pivot&&e.moves){   // obj (explode) > pivot (turns, at the axis) > mesh (shifted so the axis is at 0)
+          const at=new THREE.Vector3().fromArray(e.pivot.at), piv=new THREE.Group();
+          piv.position.copy(at); mesh.position.sub(at); piv.add(mesh); obj.add(piv);
+          movers.push({piv,kind:e.moves,axis:new THREE.Vector3().fromArray(e.pivot.axis||[0,0,1]).normalize(),ang:0,vel:0});
+        } else obj.add(mesh);
         // an instance's offset is in the mesh's own frame: carry it through m's rotation
         const off=new THREE.Vector3(d[0],d[1],d[2]).applyMatrix3(new THREE.Matrix3().setFromMatrix4(M));
         const ie=new THREE.Vector3(iex[i][0],iex[i][1],iex[i][2]).applyMatrix3(new THREE.Matrix3().setFromMatrix4(M));
@@ -142,5 +151,41 @@
   spin.addEventListener('click',()=>{controls.autoRotate=!controls.autoRotate;spinText();});
   $('reset').addEventListener('click',home);
   renderer.domElement.addEventListener('pointerdown',()=>{if(controls.autoRotate){controls.autoRotate=false;spinText();}});
-  (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,cam);})();
+
+  // ---- wind: the cups spin at the real rpm for the speed (drawn no faster than max_draw_hz), the vane swings round
+  const ws=$('wind-speed'), wsv=$('wind-speed-v'), wd=$('wind-dir'), wdv=$('wind-dir-v'), gusty=$('gusty');
+  if(ws&&reduce) ws.value='0';
+  const PTS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  const wrap=a=>{a=(a+Math.PI)%(2*Math.PI); if(a<0) a+=2*Math.PI; return a-Math.PI;};
+  const ph=[0,1,2,3].map(()=>Math.random()*2*Math.PI);
+  let tw=0, lastText='', vaneSet=false;
+  function wind(dt){
+    if(!cfg||!cfg.wind||!ws||!movers.length) return;
+    tw+=dt;
+    let v=+ws.value, dir=+wd.value;
+    if(gusty&&gusty.checked){   // a gentle wander: two slow sines each, about ±20% speed and ±15° direction
+      v*=1+0.14*Math.sin(0.9*tw+ph[0])+0.08*Math.sin(2.3*tw+ph[1]);
+      dir+=10*Math.sin(0.5*tw+ph[2])+5*Math.sin(1.7*tw+ph[3]);
+      v=Math.max(0,v);
+    }
+    dir=((dir%360)+360)%360;
+    const hz=v*3.6/cfg.wind.kmh_per_hz, draw=Math.min(hz,cfg.wind.max_draw_hz);
+    const rpm=Math.round(hz*60), txt=v.toFixed(1)+' m/s · '+rpm+' rpm'+(hz>draw?' (drawn at '+Math.round(draw*60)+')':'')
+      +'|'+Math.round(dir)+'° '+PTS[Math.round(dir/22.5)%16];
+    if(txt!==lastText){const t=txt.split('|'); if(wsv) wsv.textContent=t[0]; if(wdv) wdv.textContent=t[1]; lastText=txt;}
+    const target=-dir*Math.PI/180;   // nose from north (+y) round to the bearing: clockwise from above, so negative about +Z
+    movers.forEach(mv=>{
+      if(mv.kind==='cups') mv.ang=wrap(mv.ang-2*Math.PI*draw*dt);   // clockwise seen from above
+      else if(mv.kind==='vane'){
+        if(!vaneSet){mv.ang=target;}
+        const k=3+2*v, c=1.2*Math.sqrt(k);   // a damped swing, quicker in more wind, with a little overshoot
+        mv.vel+=(k*wrap(target-mv.ang)-c*mv.vel)*dt; mv.ang=wrap(mv.ang+mv.vel*dt);
+      }
+      mv.piv.quaternion.setFromAxisAngle(mv.axis,mv.ang);
+    });
+    vaneSet=true;
+  }
+  let last=performance.now();
+  (function loop(now){requestAnimationFrame(loop);const dt=Math.min(0.1,Math.max(0,((now||last)-last)/1000));last=now||last;
+    wind(dt);controls.update();renderer.render(scene,cam);})();
 })();

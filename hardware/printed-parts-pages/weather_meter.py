@@ -87,11 +87,16 @@ def gear_clamp(circles, z, worm_dir):
 
 
 def anemometer(x, z_arm):
-    """The cups on the arm's end at x: a spindle housing, a hub, three spokes and three hollow cups."""
+    """The cups on the arm's end at x. Returns (housing, rotor, pivot): the spindle housing stays put; the rotor (hub,
+    three spokes, three hollow cups) turns about the vertical line through pivot (x, 0, top of the housing).
+
+    Each cup's open (concave) face looks along +t, the anticlockwise tangent seen from above. A cup catches more wind
+    on its concave face than on its round back, so the cup whose concave face is upwind gets pushed downwind, and the
+    rotor turns towards the cups' round backs: clockwise seen from above (negative about +Z)."""
     z0 = z_arm + ARM_H / 2
-    s = cyl(BODY_D, BODY_H, (x, 0, z0))
+    housing = cyl(BODY_D, BODY_H, (x, 0, z0))
     zt = z0 + BODY_H
-    s = s.union(cyl(BODY_D * 1.2, 12.0, (x, 0, zt)))
+    s = cyl(BODY_D * 1.2, 12.0, (x, 0, zt))
     zc = zt + 6.0
     for k in range(3):
         a = 2 * math.pi * k / 3
@@ -104,14 +109,17 @@ def anemometer(x, z_arm):
         half = ball.cut(cq.Workplane("XY").box(CUP_D * 2, CUP_D * 2, CUP_D * 2).translate((CUP_D, 0, 0)))
         half = half.rotate((0, 0, 0), (0, 0, 1), math.degrees(math.atan2(ty, tx))).translate((cx, cy, zc))
         s = s.union(half)
-    return s
+    return housing, s, (x, 0.0, zt)
 
 
 def vane(x, z_arm):
-    """The vane on the arm's end at x: a spindle housing, a boom along y, a tail fin behind and an arrowhead in front."""
+    """The vane on the arm's end at x. Returns (housing, rotor, pivot): the spindle housing stays put; the rotor (a
+    collar, a boom along y, a tail fin behind and an arrowhead in front, the arrow at +y) turns about the vertical line
+    through pivot (x, 0, top of the housing). Tail downwind, so the arrow points where the wind comes from."""
     z0 = z_arm + ARM_H / 2
     zb = z0 + BODY_H + 8.0
-    s = cyl(BODY_D, BODY_H, (x, 0, z0)).union(cyl(BODY_D * 0.8, 10.0, (x, 0, z0 + BODY_H)))
+    housing = cyl(BODY_D, BODY_H, (x, 0, z0))
+    s = cyl(BODY_D * 0.8, 10.0, (x, 0, z0 + BODY_H))
     front = VANE_L - VANE_TAIL_FROM - VANE_FIN[0]            # the arrow's tip this far in front of the spindle
     back = VANE_TAIL_FROM + VANE_FIN[0]
     s = s.union(cyl(6.0, front + back - 30.0, (x, -back + 10.0, zb), (0, 1, 0)))
@@ -120,7 +128,7 @@ def vane(x, z_arm):
                                        (-VANE_TAIL_FROM, 8.0)]).close().extrude(2.0).translate((x - 1.0, 0, zb)))
     tip = (cq.Workplane("YZ").polyline([(front - 35.0, -12.0), (front, 0), (front - 35.0, 12.0)]).close()
            .extrude(6.0).translate((x - 3.0, 0, zb)))
-    return s.union(fin).union(tip)
+    return housing, s.union(fin).union(tip), (x, 0.0, z0 + BODY_H)
 
 
 def rain_gauge(cx, cy, z_top_of_arm):
@@ -138,7 +146,12 @@ def build(p):
     """p (from build.py, assembly frame: mm, Z up, the pole's axis on Z at x = y = 0, the TX box and the shield on
     the -y side): pole_r, pole_top, mast_overlap, mast_clamps (two depths below the pole's top), rain_below (the
     rain arm's top this far under the cross arm's top), glands {name: [x, y, z]} (the outside end of each meter
-    cable's PG-9 gland), drip (the drip loop's depth below a gland). Returns [(key, shape, info)]."""
+    cable's PG-9 gland), drip (the drip loop's depth below a gland). Returns [(key, shape, info)].
+
+    The two parts that move with the wind (meter-cups, the cup rotor; meter-vane, the vane) are their own meshes, and
+    their info carries pivot = {at: [x, y, z], axis: [0, 0, 1]} in the assembly frame; their spindle housings are the
+    static meter-cups-housing and meter-vane-housing. The rain gauge is one closed box here (no tipping bucket inside),
+    so nothing in it moves."""
     r = p["pole_r"]
     my = r + MAST_D / 2                                    # the mast against the pole, behind it (+y)
     m0 = p["pole_top"] - p["mast_overlap"]                 # the mast's foot
@@ -155,8 +168,12 @@ def build(p):
     arm = block(-hx / 2, hx / 2, my - hy / 2, my + hy / 2, za - hz + ARM_H / 2, za + ARM_H / 2)
     arm = arm.union(block(-ARM_L / 2, ARM_L / 2, my - ARM_W / 2, my + ARM_W / 2, za - ARM_H / 2, za + ARM_H / 2))
     out.append(("meter-arm", arm, dict(z=round(za, 1))))
-    out.append(("meter-cups", anemometer(SENSOR_AT, za).translate((0, my, 0)), dict(x=SENSOR_AT)))
-    out.append(("meter-vane", vane(-SENSOR_AT, za).translate((0, my, 0)), dict(x=-SENSOR_AT)))
+    # the two wind sensors: a static spindle housing each, and the part that moves, with its pivot (a vertical axis)
+    for key, fn, x in (("meter-cups", anemometer, SENSOR_AT), ("meter-vane", vane, -SENSOR_AT)):
+        housing, rotor, (px, py, pz) = fn(x, za)
+        out.append((key + "-housing", housing.translate((0, my, 0)), dict(x=x)))
+        out.append((key, rotor.translate((0, my, 0)),
+                    dict(x=x, pivot=dict(at=[round(px, 3), round(py + my, 3), round(pz, 3)], axis=[0, 0, 1]))))
 
     # the rain arm, level, out along +y (away from the pole, the TX box and the shield) lower on the mast
     zr = za + ARM_H / 2 - p["rain_below"]                   # the rain arm's top face
