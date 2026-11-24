@@ -7,6 +7,10 @@ pole by its back, long side vertical. Every shelf slides in toward the back.
 
 Once it's on the pole, [`MAINTENANCE.md`](MAINTENANCE.md) has what to check, how often, and what each alert means.
 
+Every printed part other than the base (the EVM clips, the lid shade, the retention bar, the test ring and coupon, the pod
+boxes and the shield remix) is defined in [`../PRINTED-PARTS.md`](../PRINTED-PARTS.md), with its status, STL, print
+pose, dimensions, fasteners and checks.
+
 The base is 120 mm deep outside. It has a 3 mm floor, long walls 4.25 mm thick and short walls 4.0 mm thick. Inside,
 it's 121 x 167.5, and 140 deep from the floor to the closed lid. (The drawings use 123.5 x 169.5, which is the lid
 frame. The 120 is the base's outside depth.)

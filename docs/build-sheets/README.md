@@ -12,6 +12,10 @@ Ready-to-print copies are in [`pdf/`](pdf/). Sessions 1 to 5 were rebuilt and ch
 
 Once the station is up, [`hardware/tx-stack-r1/MAINTENANCE.md`](../../hardware/tx-stack-r1/MAINTENANCE.md) has the maintenance plan: what to check, how often, and what each alert means.
 
+For the printed parts (the EVM clips, the lid shade, the test ring and coupon, the pod boxes and the shield remix),
+[`hardware/PRINTED-PARTS.md`](../../hardware/PRINTED-PARTS.md) has each part's status, STL, print pose, dimensions and
+fasteners, plus a print queue.
+
 | PDF | What you build | Pages |
 |---|---|---|
 | [tx-session1-prep.pdf](pdf/tx-session1-prep.pdf) | Snap the card rails, label, measure the insert, cut and test-fit the PAD3U backplane | 11 |

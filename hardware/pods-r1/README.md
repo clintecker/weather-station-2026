@@ -19,6 +19,8 @@ in `docs/superpowers/specs/2026-11-17-sensor-pods-design.md`.
 - `shield/remix.py` (CadQuery + manifold3d, `.venv-cad`, from `sheets/requirements-cad.txt`): the remixed top cap
   (an S-curve skirt and four screw bosses under the UV crown) and L-arm (TH and BARO mounting faces, the TH lead hole). It prints its checks and writes the
   two STLs to `shield_out`, outside git. Its docstring records the placements and the reasons for them.
+- [`../PRINTED-PARTS.md`](../PRINTED-PARTS.md): every printed part in the station (the pod boxes and lids, the shield
+  remix, the TX's loose parts), with its status, STL, print pose, dimensions, fasteners and checks.
 - `sheets/`: Session P, Clint's bench PDF for the three pod boards and the port cable. It uses the style of the TX
   sheets (`../tx-stack-r1/sheets`) and imports their renderer and page furniture read-only.
   - `scenes_p.py` + `models_p.py` render every illustration from CadQuery geometry. They run one scene per process
