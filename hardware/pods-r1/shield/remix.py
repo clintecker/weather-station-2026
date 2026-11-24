@@ -14,10 +14,9 @@ WHAT THE MESHES SAY (measured here, not assumed)
         a 2.4 mm roof. Under the roof an inner cone (a funnel, r 25.5 at the cap's bottom face to r 35.5 where it meets
         the roof) leaves only r < 25 with a straight way up to the roof's underside from below.
   arm   a 5.0 mm base plate (Z -4..1) round the cup's pocket, an upright at its -y end (Y -89..-84, Z up to 60) with a
-        gusset, and three pairs of hose-clamp slots through the upright (Z 19-23, 34-38, 49-53; the pole clamp's band runs
-        through a pair, round the pole behind the upright and round the gusset in front). The pole clamp itself is NOT in
-        the 3MF: clamp_envelope() is an assumed envelope (sources pole_clamp_env, TBD). The arm is printed on its base
-        plate in the 3MF.
+        gusset, and three pairs of small slots through the upright (clamp_slots()). No band of any useful width goes
+        through those slots, and the upright's flat back face has nothing to seat on a round pole, so the remix fills
+        them and adds the pole saddle below. The arm is printed on its base plate in the 3MF.
   cup   radius 30.0 at most; its Ø5 through-hole at (-12, 4) runs down through the disc and opens under it at Z ~22.6,
         beside the cup's column: the TH lead's way out (no new hole in the cup).
 
@@ -45,11 +44,27 @@ CHOICES (Task 7; the brief left these to the builder)
     BOX_BELOW_PLATES under the lowest louver plate, so it sits beside the cup, below the plates, and reaches below the arm.
     Four M3 x 10 per box through the face into its lug inserts, from the face's inner (cup) side: fit the boxes before
     the cup goes on the arm.
-    Each face and tab runs from the upright's back plane (Y -89) to past the boxes so that the REMIXED ARM PRINTS ON
-    THE UPRIGHT'S BACK FACE (Y up in print): the faces hang below the base plate, so the 3MF's base-plate-down pose no
-    longer works; on its back face every face and tab is a wall standing on the bed.
+    Each face runs from the saddle's back plane, and each tab from the upright's back plane, to past the boxes, so that
+    the REMIXED ARM PRINTS ON ITS BACK (Y up in print): the faces hang below the base plate, so the 3MF's
+    base-plate-down pose no longer works; on its back every face is a wall standing on the bed.
     The TH box's lead gland is in its bottom wall; with the box on the -x face its +x box axis runs along world -y, so
     the lead gland sits 10 mm to -y of the box's middle.
+  Pole saddle and strap tunnels (Clint, 2026-11-24: the arm is strapped to the pole like everything else)
+    A saddle block on the upright's back face, as wide as the upright (SADDLE_HALF_W) and as tall, with a vertical V
+    groove in its back (SADDLE_HALF_ANGLE, 80 degrees included, SADDLE_LIP wide at the back face). Any pole from
+    POLE_RANGE seats on the V's two flanks along two vertical lines, so the arm can't rock or spin once strapped;
+    pole_axis(d) is where a pole of diameter d sits. Two strap tunnels run straight across the block along X, one near
+    the bottom and one near the top of the upright (STRAP_SLOT_Z, STRAP_SLOT_PITCH apart: the wire straps on the pole
+    line up with them). Each is STRAP_SLOT clear (Z x Y), between the upright's back face and a STRAP_WALL wall in
+    front of the V's apex, so a strap goes through the block, out of both sides, round the block's back corners and
+    round the pole: pole and bracket in one loop. The tunnel's rear edges at both exits are rounded (STRAP_EXIT_R) and
+    the block's back corners are notched round (SADDLE_CORNER_R) over each tunnel's height, so the strap never bends
+    over a sharp edge. A strap is a pole_strap_tie (heavy UV-black nylon 66 zip tie) or a pole_strap_band (SAE 20
+    stainless hose clamp, 1/2 in band); two per arm. The original slots are filled. strap_envelope() is where the
+    straps, their heads or worm housings and the pole are, for the boxes' clearance check.
+    The faces run back to the saddle's back plane, so the arm still prints on its back (now the saddle's back face): the
+    saddle's flats and the faces' ends are on the bed, the V's flanks are 50 degrees from straight down, and the
+    tunnels' and tabs' undersides are short flat bridges.
   TH lead
     From the SHT45's header pads down the stand, through the cup's own Ø5 hole, out under the cup's disc, down through
     a new Ø LEAD_HOLE_D hole in the TH tab (the arm lead hole, beside the face's inner side), down the face's inner side,
@@ -94,9 +109,28 @@ BOX_BELOW_PLATES = 6.0                           # TH/BARO box top under the low
 LEAD_HOLE_D = 6.0                                # the arm lead hole (the lead is OD 3.0-4.3)
 LEAD_DROP = 3.5                                  # the lead drops this far below where the cup hole opens, clear of the column
 GLAND_DROP = S.val("gland_pg7")[2] + S.val("gland_pg7")[3]      # PG-7 body + cap below the box floor: 28.0
-CLAMP_WORM, CLAMP_SLOT_MARGIN = S.val("pole_clamp_env")   # assumed: worm housing + band in front, margin round the slots
+POLE_D = 25.4                                    # the pole: about 1 in (Clint, 2026-11-24)
+POLE_RANGE = (22.0, 34.0)                        # the saddle seats any pole from this range on its two flanks
+SADDLE_HALF_ANGLE = 40.0                         # degrees: the V's flank from its axis (80 included; 50 from down in print)
+SADDLE_HALF_W = 19.5                             # the saddle block's half-width: the upright's back face, sides flush
+SADDLE_LIP = 14.0                                # the V's half-width at the saddle's back face
+SADDLE_CORNER_R = 3.0                            # the saddle's back corners, rounded where each strap turns to the pole
+STRAP_SLOT = (14.5, 3.8)                         # each strap tunnel's clear opening: along Z (strap width) x along Y
+STRAP_WALL = 2.0                                 # the wall between each tunnel and the V's apex
+STRAP_EXIT_R = 2.0                               # each tunnel's rear edge, rounded at both exits
+STRAP_SLOT_Z = (5.0, 51.0)                       # EXPORTED: the two tunnels' centres, shield frame Z (the wire straps align)
+STRAP_SLOT_PITCH = STRAP_SLOT_Z[1] - STRAP_SLOT_Z[0]     # EXPORTED: 46.0 between the two tunnels' centres
+STRAP_T = 2.0                                    # a strap's thickness in the envelope (the tie 1.9, the band 0.8)
+STRAP_HEAD = (20.0, 14.0)                        # a zip tie's head or a clamp's worm housing behind the pole: wide x proud
+WALL_MIN = 1.2                                   # the project's thinnest wall
+SADDLE_V_DEPTH = SADDLE_LIP / math.tan(math.radians(SADDLE_HALF_ANGLE))
+SADDLE_DEPTH = STRAP_SLOT[1] + STRAP_WALL + SADDLE_V_DEPTH      # the saddle block behind the upright's back face
+_TIE, _BAND = S.val("pole_strap_tie"), S.val("pole_strap_band")
+assert STRAP_SLOT[0] >= max(_TIE[1], _BAND[1]) + 1.0 and STRAP_SLOT[1] >= max(_TIE[2], _BAND[2]) + 1.5, "a strap tunnel is too small"
+assert STRAP_WALL >= WALL_MIN
+assert POLE_RANGE[1] / 2 * math.cos(math.radians(SADDLE_HALF_ANGLE)) < SADDLE_LIP - 0.5, "the largest pole's contact is off the V"
 CAP_PRINT_UP = (0.0, 0.0, -1.0)                  # the cap prints on its flat top (as in the 3MF)
-ARM_PRINT_UP = (0.0, 1.0, 0.0)                   # the remixed arm prints on the upright's back face (Y = -89)
+ARM_PRINT_UP = (0.0, 1.0, 0.0)                   # the remixed arm prints on its back: the saddle's back face down
 SEG = 96                                         # circle segments for the probes and tubes
 
 
@@ -403,6 +437,89 @@ def uv_cable_envelope():
 
 # ------------------------------------------------------------------ the arm
 @lru_cache(maxsize=None)
+def upright():
+    """The arm's upright, measured: its back plane (y), front plane (y) and its Z span."""
+    bb = original(A.ARM).bounding_box()
+    _slots, y_back, y_front = clamp_slots()
+    return dict(y_back=float(bb[1]), y_front=y_front, z0=float(bb[2]), z1=float(bb[5]))
+
+
+def saddle_planes():
+    """(the upright's back plane, the V's apex, the saddle's back plane): Y in the shield frame."""
+    yb = upright()["y_back"]
+    return yb, yb - STRAP_SLOT[1] - STRAP_WALL, yb - SADDLE_DEPTH
+
+
+def pole_axis(d=POLE_D):
+    """(x, y) of a pole of diameter d seated in the saddle's V (its axis is vertical)."""
+    _yb, ya, _yr = saddle_planes()
+    return 0.0, ya - d / 2 / math.sin(math.radians(SADDLE_HALF_ANGLE))
+
+
+def pole_contacts(d=POLE_D):
+    """The two lines where a pole of diameter d touches the V's flanks: [(x, y)], one per flank."""
+    a = math.radians(SADDLE_HALF_ANGLE)
+    _yb, ya, _yr = saddle_planes()
+    s = d / 2 / math.tan(a)                                      # apex to the contact, along a flank
+    return [(sg * s * math.sin(a), ya - s * math.cos(a)) for sg in (-1, 1)]
+
+
+def strap_slots():
+    """The two strap tunnels: [dict(x0, x1, y0, y1, z0, z1)], their clear openings in the shield frame."""
+    yb, _ya, _yr = saddle_planes()
+    w, t = STRAP_SLOT
+    return [dict(x0=-SADDLE_HALF_W, x1=SADDLE_HALF_W, y0=yb - t, y1=yb, z0=zc - w / 2, z1=zc + w / 2) for zc in STRAP_SLOT_Z]
+
+
+def _round_off(x_edge, y_edge, sx, sy, r, z0, z1):
+    """A cutter that rounds a convex vertical edge at (x_edge, y_edge) with radius r: the material lies at -sx, -sy."""
+    cx, cy = x_edge - sx * r, y_edge - sy * r
+    box = _block(min(cx, x_edge + sx), max(cx, x_edge + sx), min(cy, y_edge + sy), max(cy, y_edge + sy), z0, z1)
+    return box.cut(cq.Workplane("XY").workplane(offset=z0 - 1).center(cx, cy).circle(r).extrude(z1 - z0 + 2))
+
+
+@lru_cache(maxsize=None)
+def saddle():
+    """The pole saddle on the upright's back (a manifold, before it is fused to the arm): a block as wide and tall as the
+    upright, a vertical V in its back for the pole, two strap tunnels across it along X, rounded where the straps bend."""
+    u = upright()
+    yb, ya, yr = saddle_planes()
+    w, lip, z0, z1 = SADDLE_HALF_W, SADDLE_LIP, u["z0"], u["z1"]
+    prof = [(-w, yb + 0.5), (w, yb + 0.5), (w, yr), (lip, yr), (0.0, ya), (-lip, yr), (-w, yr)]
+    blk = cq.Workplane("XY").workplane(offset=z0).polyline(prof).close().extrude(z1 - z0)
+    for sl in strap_slots():
+        sz0, sz1 = sl["z0"], sl["z1"]
+        blk = blk.cut(_block(-w - 1.0, w + 1.0, sl["y0"], yb + 1.0, sz0, sz1))       # the tunnel (the upright is its front wall)
+        for sx in (-1, 1):
+            blk = blk.cut(_round_off(sx * w, sl["y0"], sx, 1, STRAP_EXIT_R, sz0, sz1))          # its rear edge at the exit
+            blk = blk.cut(_round_off(sx * w, yr, sx, -1, SADDLE_CORNER_R, sz0, sz1))            # the back corner
+    return from_cq(blk)
+
+
+@lru_cache(maxsize=None)
+def strap_envelope():
+    """Where the straps, their heads (or worm housings) and the pole are, for the smallest, the nominal and the largest
+    pole the saddle takes: the pole as a long cylinder, each strap as the loop round the saddle's back and the pole
+    (STRAP_T thick, a tunnel's width tall), and a STRAP_HEAD behind the pole at each strap."""
+    yb, _ya, yr = saddle_planes()
+    w, big = SADDLE_HALF_W + STRAP_T, 400.0
+    env = None
+    for d in (POLE_RANGE[0], POLE_D, POLE_RANGE[1]):
+        px, py = pole_axis(d)
+        part = cyl((px, py), d, -big, big)
+        for sl in strap_slots():
+            z0, z1 = sl["z0"], sl["z1"]
+            pts = [mf.Manifold.cube((2 * w, 0.01, z1 - z0)).translate((-w, yb - 0.01, z0)),
+                   mf.Manifold.cube((2 * w, 0.01, z1 - z0)).translate((-w, yr - STRAP_T, z0)),
+                   cyl((px, py), d + 2 * STRAP_T, z0, z1)]
+            hw, hp = STRAP_HEAD
+            head = from_cq(_block(px - hw / 2, px + hw / 2, py - d / 2 - hp, py, z0 - 1.0, z1 + 1.0))
+            part = part + mf.Manifold.batch_hull(pts) + head
+        env = part if env is None else env + part
+    return env
+
+
+@lru_cache(maxsize=None)
 def arm_mount(name):
     """The face for one box: holes (world points on the box's back plane), normal (box back -> arm), thickness, and the
     face's extent (x0, x1, y0, y1, z0, z1)."""
@@ -412,7 +529,7 @@ def arm_mount(name):
     inner = cup_radius() + FACE_GAP
     hy = [h[1] for h in holes]
     hz = [h[2] for h in holes]
-    y0 = float(original(A.ARM).bounding_box()[1])                        # the upright's back plane: the print bed
+    y0 = saddle_planes()[2]                                              # the saddle's back plane: the print bed
     y1 = max(hy) + FACE_MARGIN
     z0 = min(hz) - FACE_MARGIN
     z1 = min(max(hz) + FACE_MARGIN, plates_bottom() - 5.0)
@@ -436,12 +553,19 @@ def lead_hole():
 def arm_remixed():
     lo, hi, t = arm_plate()
     assert abs(t - FACE_T) < 0.05, f"the arm's base plate is {t:.2f} thick, FACE_T is {FACE_T}"
+    u = upright()
+    for zc in STRAP_SLOT_Z:                                              # each tunnel inside the upright's height, walled
+        assert u["z0"] + WALL_MIN <= zc - STRAP_SLOT[0] / 2 and zc + STRAP_SLOT[0] / 2 <= u["z1"] - WALL_MIN, zc
     arm = original(A.ARM)
+    slots, y_back, y_front = clamp_slots()
+    for x0, x1, z0, z1 in slots:                                         # fill the original's small slots
+        arm = arm + from_cq(_block(x0 - 0.5, x1 + 0.5, y_back, y_front, z0 - 0.5, z1 + 0.5))
+    arm = arm + saddle()
     for name in ("TH", "BARO"):
         m = arm_mount(name)
         x0, x1, y0, y1, z0, z1 = m["face"]
         tx0, tx1 = (x0, -TAB_IN) if x0 < 0 else (TAB_IN, x1)
-        arm = arm + from_cq(_block(x0, x1, y0, y1, z0, z1)) + from_cq(_block(tx0, tx1, y0, y1, lo, hi))
+        arm = arm + from_cq(_block(x0, x1, y0, y1, z0, z1)) + from_cq(_block(tx0, tx1, y_back, y1, lo, hi))
         nrm = np.array(m["normal"])
         for h in m["holes"]:
             a, b = np.array(h) - nrm * 1.0, np.array(h) + nrm * (FACE_T + 1.0)
@@ -455,7 +579,8 @@ def arm_remixed():
 
 @lru_cache(maxsize=None)
 def clamp_slots():
-    """The hose-clamp slots through the arm's upright, measured: [(x0, x1, z0, z1)], and the upright's faces (y)."""
+    """The ORIGINAL arm's small slots through its upright, measured: [(x0, x1, z0, z1)], and the upright's faces (y).
+    The remix fills them (arm_remixed); the straps go through strap_slots() instead."""
     v, f = A.assembled()[A.ARM]
     vy = v[(v[:, 1] < v[:, 1].min() + 5.5)]
     y_back = float(v[:, 1].min())
@@ -491,23 +616,6 @@ def clamp_slots():
             sel = pts[(pts[:, 1] >= r[0]) & (pts[:, 1] <= r[-1])]
             slots.append((float(sel[:, 0].min()), float(sel[:, 0].max()), float(r[0]), float(r[-1])))
     return slots, y_back, y_front
-
-
-@lru_cache(maxsize=None)
-def clamp_envelope():
-    """Where the pole clamp is (it is not in the 3MF): the pole and the band behind the upright (everything past its
-    back plane), and the band through each slot pair round the arm's front (gusset) with its worm housing (CLAMP_WORM)."""
-    slots, y_back, y_front = clamp_slots()
-    v, f = A.assembled()[A.ARM]
-    big = 200.0
-    env = from_cq(_block(-big, big, y_back - big, y_back, -big, big))
-    for z0, z1 in sorted({(s[2], s[3]) for s in slots}):
-        xo = max(max(abs(s[0]), abs(s[1])) for s in slots if (s[2], s[3]) == (z0, z1))
-        near = v[(np.abs(v[:, 0]) <= xo) & (v[:, 2] >= z0 - 1) & (v[:, 2] <= z1 + 1) & (v[:, 1] < 0)]
-        front = float(near[:, 1].max()) if len(near) else y_front
-        m = CLAMP_SLOT_MARGIN
-        env = env + from_cq(_block(-xo - m, xo + m, y_back, front + CLAMP_WORM, z0 - m, z1 + m))
-    return env
 
 
 # ------------------------------------------------------------------ the TH lead
@@ -591,9 +699,23 @@ def remix_checks():
     lo, hi, t = arm_plate()
     out.append(f"arm base plate Z {lo:.2f}..{hi:.2f} ({t:.2f} thick); cup radius {cup_radius():.2f}; lowest louver plate Z "
                f"{plates_bottom():.2f}")
-    clamp = clamp_envelope()
-    slots, yb, yf = clamp_slots()
-    out.append("  pole clamp slots (x0, x1, z0, z1): " + "; ".join(f"({a:.1f}, {b:.1f}, {c:.1f}, {d:.1f})" for a, b, c, d in slots))
+    clamp = strap_envelope()
+    _yb, ya, yr = saddle_planes()
+    out.append(f"  pole saddle: a {2 * SADDLE_HALF_ANGLE:g} degree V, {2 * SADDLE_LIP:g} wide at its back, apex Y {ya:.2f}, "
+               f"back Y {yr:.2f}; poles Ø{POLE_RANGE[0]:g}-{POLE_RANGE[1]:g}")
+    for d in (POLE_RANGE[0], POLE_D, POLE_RANGE[1]):
+        px, py = pole_axis(d)
+        pole = cyl((px, py), d - 0.02, upright()["z0"], upright()["z1"])
+        touch = cyl((px, py), d + 0.2, upright()["z0"], upright()["z1"]) ^ arm
+        lines = len(touch.decompose()) if touch.volume() > 0 else 0
+        out.append(f"    Ø{d:g} pole: axis ({px:.2f}, {py:.2f}), overlap {(pole ^ arm).volume():.4f} mm3, touches on {lines} lines")
+        bad |= (pole ^ arm).volume() > 1e-3 or lines != 2
+    for sl in strap_slots():
+        out.append(f"  strap tunnel Z {sl['z0']:.2f}..{sl['z1']:.2f} (centre {(sl['z0'] + sl['z1']) / 2:g}), Y {sl['y0']:.2f}..{sl['y1']:.2f}, "
+                   f"{STRAP_SLOT[0]:g} x {STRAP_SLOT[1]:g} clear across X {sl['x0']:g}..{sl['x1']:g}")
+        probe = from_cq(_block(sl["x0"] - 2, sl["x1"] + 2, sl["y0"] + 0.01, sl["y1"] - 0.01, sl["z0"] + 0.01, sl["z1"] - 0.01))
+        bad |= (probe ^ arm).volume() > 1e-3
+    out.append(f"  strap tunnels {STRAP_SLOT_PITCH:g} apart (STRAP_SLOT_PITCH); the original's {len(clamp_slots()[0])} small slots filled")
     boxes = {}
     for n in ("TH", "BARO"):
         mm = arm_mount(n)
@@ -604,7 +726,7 @@ def remix_checks():
         g_cup, g_clamp, g_pl = b.min_gap(asm[A.CUP], 50.0), b.min_gap(clamp, 50.0), b.min_gap(asm[f"{A.PLATE}.1"], 50.0)
         out.append(f"  {n} face x {x0:.1f}..{x1:.1f}, y {y0:.1f}..{y1:.1f}, z {z0:.1f}..{z1:.1f}; box x {bb[0]:.1f}..{bb[3]:.1f} "
                    f"y {bb[1]:.1f}..{bb[4]:.1f} z {bb[2]:.1f}..{bb[5]:.1f}")
-        out.append(f"  {n} clearances: cup {g_cup:.2f}, pole clamp {g_clamp:.2f}, plate 1 {g_pl:.2f} (each needs 5.0); "
+        out.append(f"  {n} clearances: cup {g_cup:.2f}, pole and straps {g_clamp:.2f}, plate 1 {g_pl:.2f} (each needs 5.0); "
                    f"overlap with the arm {(b ^ arm).volume():.3f} mm3")
         out.append(f"  {n} screws (M3 x {S.val('pod_mount_screw')[1]:g} from the face's inner side): "
                    + ", ".join(f"({h[0]:.1f}, {h[1]:.1f}, {h[2]:.1f})" for h in mm["holes"]))

@@ -23,7 +23,7 @@ try:
 except ImportError:                                    # the plain .venv has neither
     mf = None
 
-CLEAR = 5.0        # the brief: the TH and BARO boxes clear the base cup and the pole clamp by 5 mm
+CLEAR = 5.0        # the brief: the TH and BARO boxes clear the base cup and the pole straps by 5 mm
 EDGE = 3.0         # the brief: every UV mount hole at least 3 mm inside the cap's flat top
 SLIVER = 1.0       # mm^3: an intersection smaller than this is two faces touching, not an overlap
 
@@ -175,11 +175,9 @@ class PodsRemix(unittest.TestCase):
         self.assert_part_is_good(arm, old)
         cup = self.orig[r.A.CUP]
         plate1 = self.orig["object_79.1"]
-        clamp = r.clamp_envelope()
-        slots, y_back, y_front = r.clamp_slots()                         # the hose-clamp slots, measured in the upright
-        self.assertGreaterEqual(len(slots), 2)
-        for x0, x1, z0, z1 in slots:                                     # the envelope holds the band in every slot
-            probe = r.cyl(((x0 + x1) / 2, (y_back + y_front) / 2), 0.5, (z0 + z1) / 2 - 0.25, (z0 + z1) / 2 + 0.25)
+        clamp = r.strap_envelope()                                       # the pole, its straps and their heads
+        for sl in r.strap_slots():                                       # the envelope holds the strap in every tunnel
+            probe = r.cyl((0.0, (sl["y0"] + sl["y1"]) / 2), 0.5, (sl["z0"] + sl["z1"]) / 2 - 0.25, (sl["z0"] + sl["z1"]) / 2 + 0.25)
             self.assertAlmostEqual(overlap(probe, clamp), probe.volume(), delta=1e-3)
         cz = cup.bounding_box()
         self.assertLess(overlap(arm, cup), SLIVER)
@@ -232,9 +230,14 @@ class PodsRemix(unittest.TestCase):
         self.assertLess(path[-1][2], g[2])                               # it ends below the TH box's lead gland (a drip loop)
         self.assertLess(math.hypot(path[-1][0] - g[0], path[-1][1] - g[1]), 30.0)
         self.assertLessEqual(r.lead_length(), r.S.val("th_lead_m") * 1000)
-        # printable on the upright's back face: no more steep downward area than the original arm in its own 3MF pose
-        # (base plate down), bar the roofs of the nine new horizontal holes (eight screw holes and the lead hole)
-        self.assertLessEqual(r.overhang_area(arm, r.ARM_PRINT_UP), r.overhang_area(old, (0.0, 0.0, 1.0)) + 30.0 * 9)
+        # printable on its back (the saddle's back face): no more steep downward area than the original arm in its own
+        # 3MF pose (base plate down), bar the roofs of the nine new horizontal holes (eight screw holes and the lead
+        # hole), the strap tunnels' flat roofs (bridges STRAP_SLOT wide across the saddle) and the tabs' undersides
+        # between the saddle and the faces (bridges)
+        tunnels = len(r.STRAP_SLOT_Z) * 2 * r.SADDLE_HALF_W * r.STRAP_SLOT[0]
+        tabs = 2 * (r.cup_radius() + r.FACE_GAP - r.SADDLE_HALF_W) * r.FACE_T
+        self.assertLessEqual(r.overhang_area(arm, r.ARM_PRINT_UP),
+                             r.overhang_area(old, (0.0, 0.0, 1.0)) + 30.0 * 9 + tunnels + tabs)
 
 
 if __name__ == "__main__":

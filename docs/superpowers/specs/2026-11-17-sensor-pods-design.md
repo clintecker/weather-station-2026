@@ -70,9 +70,10 @@ port on a straight-through cable, is found at boot by its ID EEPROM, and reads o
     (53 x 47, 4 thick, three Ø4 bores on the posts' circle), zip-tie teardrops up its face; assembled, the
     strip's middle is 2.0 mm off the plate axis (its faces at y +0.5 and -4.5 mm), not 8 mm;
   - a **base cup** (object_67), diameter about 59, 32.6 tall, with a foot about 19 x 54 that meets
-    the **L-bracket arm** (object_72, 58.8 x 124 x 64; two holes and a foot pocket in its base plate). The pole clamp is
-    NOT in the model: the arm's upright has three pairs of hose-clamp slots, and `shield/remix.py` checks clearance to an
-    assumed clamp envelope round them (`pole_clamp_env`, TBD until the real clamp is measured).
+    the **L-bracket arm** (object_72, 58.8 x 124 x 64; two holes and a foot pocket in its base plate). Nothing in the model
+    holds it to the pole: its upright has three pairs of small slots no strap fits. `shield/remix.py` fills them and
+    adds a V saddle and two strap tunnels (Clint, 2026-11-24: strapped like everything else; `pole_strap_tie`,
+    `pole_strap_band`, `STRAP_SLOT_Z`).
   - The 3MF is laid out as printed (parts flat on the bed). `hardware/pods-r1/shield/assemble.py` derives the
     assembled positions from the parts' mating features (pure translations, no part turned): cup tube bores,
     stand foot bores, plate and cap post bores all on the Ø50 post circle; plate posts 15 mm tall (pitch 15);

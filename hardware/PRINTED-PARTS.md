@@ -447,7 +447,7 @@ Regenerate (local only, needs the 3MF at `sources.shield_3mf`, hash checked):
 `cd hardware/pods-r1 && ../../.venv-cad/bin/python shield/remix.py`. It writes `cap_remixed.stl` and
 `arm_remixed.stl` to `shield_out`.
 
-Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (11 tests, OK on 2026-11-24), and `remix_checks()` in
+Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (15 tests, OK on 2026-11-24), and `remix_checks()` in
 `remix.py`. Their numbers come off the shield's meshes, so they're not repeated here.
 
 ### Remixed top cap
@@ -478,11 +478,29 @@ Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (11 tests, OK on 20
   outward, glands down.
 - Interface: 4 x M3 x 10 pan head A2 per box, from the face's inner (cup) side through the 5.0 face into the box's back-face lug
   inserts. Fit the boxes before the cup goes on the arm.
-- Print: on the upright's back face (`ARM_PRINT_UP`), because the new faces hang below the base plate. In that pose
-  every face and tab is a wall standing on the bed.
-- Pole: a hose clamp through a pair of slots in the arm's upright, round the pole. The clamp's envelope is assumed
-  (`pole_clamp_env` 12 x 2, TBD), and the TH and BARO boxes keep 5 mm from it. The pole is about 1 in: each band closes
-  to about 34 mm (37 mm round the gusset). The slots are about 4 mm tall, so the band must be that narrow.
+- Pole saddle (Clint, 2026-11-24: strapped to the pole like everything else, no screws): a block on the upright's
+  back, as wide (`SADDLE_HALF_W` 19.5 each side) and as tall as the upright, with a vertical V groove in its back:
+  80° included (`SADDLE_HALF_ANGLE` 40), 28 wide at the back (`SADDLE_LIP` 14), 16.7 deep. A pole from Ø22 to Ø34
+  (`POLE_RANGE`) sits on the V's two flanks along two vertical lines, so the arm can't rock or spin once it's strapped.
+  `pole_axis(d)` gives where a pole of diameter d sits: the 1 in pole's axis is 19.8 behind the V's apex
+  (`POLE_D` 25.4).
+- Strap tunnels: two, straight across the saddle along X, 14.5 x 3.8 clear (`STRAP_SLOT`: strap width x thickness),
+  between the upright's back face and a 2.0 wall in front of the V's apex (`STRAP_WALL`). Their centres are at Z 5 and
+  Z 51 in the shield frame (`STRAP_SLOT_Z`, 46 apart: `STRAP_SLOT_PITCH`), as far apart as the upright allows, with
+  at least 1.2 of wall all round (checked). Each tunnel's rear edge is rounded R2 at both exits (`STRAP_EXIT_R`), and
+  the saddle's back corners are notched R3 over each tunnel's height (`SADDLE_CORNER_R`), so the strap never bends
+  over a sharp edge. A strap goes through a tunnel, out both sides, round the saddle's back corners and round the
+  pole: pole and bracket in one loop, about 130 mm on the 1 in pole. The wire straps on the pole go at the same two
+  heights, so they bind the arm too.
+- The upright's original small slots are filled. Nothing goes through the upright now.
+- Print: on its back (`ARM_PRINT_UP`), now the saddle's back face, because the new faces hang below the base plate.
+  The faces run back to the saddle's back plane, so they still stand on the bed with the saddle's two flats. The V's
+  flanks are 50° from straight down, and the tunnels' roofs (14.5 across) and the tabs' undersides beside the
+  saddle are short bridges.
+- Pole: two straps per arm (`pole_strap_tie`: Panduit PLT4H-C0, 7.6 x 1.9, 368 long, black weather-resistant nylon
+  66; or `pole_strap_band`: a stainless SAE 20 hose clamp, 1/2 in band, an SAE 24 on a pole near 34 mm), through the
+  tunnels and round the pole, heads or worm housings turned to the pole's back. `strap_envelope()` is the pole, the
+  straps and their heads, and the TH and BARO boxes keep 5 mm from it.
 - Material: not stated in the code.
 
 ---
@@ -514,7 +532,7 @@ Checks: `tests.test_pods_shield` and `tests.test_pods_remix` (11 tests, OK on 20
 | 21 | UV window → crown lid | DOWSIL 3145 RTV bed, 24 h cure | Ø20 x 1 JGS1 disc | Ø20.3 x 1.0 recess, 1.5 ledge | `uv_window`, `uv_window_seal` |
 | 22 | ePTFE vents → BARO / crown | adhesive (Gore VE70510), on a clean flat seat | vent | Ø12.4 x 0.4 seats | `baro_eptfe`, `eptfe_seat` |
 | 23 | UV crown → remixed cap | 4 x M3 x 10 pan head A2 up from inside the cap, through the counterbores, 5.0 grip | cap's boss seats | floor-boss inserts on r 31 | `pod_mount_screw`, `remix.uv_mount` |
-| 24 | Remixed arm → pole | hose clamp through the upright's slots (envelope assumed), band 4 mm wide or less, closing to about 34-37 mm on the 1 in pole | upright slots, gusset | pole (about 1 in, 25.4) | `pole_clamp_env` |
+| 24 | Remixed arm → pole | 2 straps, each through a strap tunnel and round the pole: a Panduit PLT4H-C0 heavy zip tie (7.6 x 1.9, 368 long, UV-black nylon 66) or a 1/2 in stainless SAE 20 hose clamp; about 130 mm of loop on the 1 in pole; the wire straps at the same heights | saddle's 80° V; two 14.5 x 3.8 tunnels at Z 5 and 51 (`STRAP_SLOT_Z`) | pole (about 1 in, 25.4; the V takes 22-34) | `pole_strap_tie`, `pole_strap_band`, `remix.STRAP_SLOT_Z` |
 | 25 | Base bond → pole | 14 AWG green from the SMA bulkhead's lug to a SatelliteSale SS-GSG9-1 strap | bonding lug | pole | README, ASSEMBLY.md |
 
 ---
@@ -553,7 +571,7 @@ Don't print `rim-coupon.stl`, `rim-edge-long.stl`, `rim-edge-short.stl` or anyth
 | `python3 hardware/pods-r1/sources.py --check` | README dimension table in step |
 | `.venv-cad/bin/python hardware/pods-r1/box/podbox.py` | six STLs rewritten byte for byte (no git change) |
 | `.venv-cad/bin/python -m unittest tests.test_pods_box tests.test_pods_v1` | 17 tests OK |
-| `.venv-cad/bin/python -m unittest tests.test_pods_shield tests.test_pods_remix` | 11 tests OK |
+| `.venv-cad/bin/python -m unittest tests.test_pods_shield tests.test_pods_remix` | 15 tests OK |
 
 The full `run.sh` scripts also rebuild the schematic, drawings and sheets. Those don't touch the printed parts, so
 they weren't run for this document.
