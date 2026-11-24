@@ -1,18 +1,26 @@
-"""Build one page per printed part, plus the index, from hardware/PRINTED-PARTS.md and the committed STLs.
-Run with the CAD venv:  .venv-cad/bin/python -B build.py OUTDIR [--urls urls.json]   (publish.sh does this)
-Writes OUTDIR/<slug>/ (index.html, viewer.js, part.json, the STLs) for every part, and OUTDIR/printed-parts/.
+"""Build one page per printed part, plus the index, from hardware/PRINTED-PARTS.md, the committed STLs and the CAD.
+Run with the CAD venv:  .venv-cad/bin/python -B build.py OUTDIR [--urls urls.json] [--index-only]   (publish.sh does this)
+Writes OUTDIR/<slug>/ for every part page, OUTDIR/printed-parts/ (the index) and OUTDIR/pages.json (each slug and the
+visibility publish.sh gives it). meshes.py (run as a subprocess) builds what isn't a committed STL into OUTDIR/_meshes/.
 --urls: the {slug: url} map the host returned when the part pages went up; the index links to those.
 
-Only our own CAD goes on these pages. The radiation shield's 3MF has an unknown licence, so nothing derived from it
-(cap or arm remix meshes, renders, or numbers from remix.py) is shown: the shield's sections are skipped, and the
-attachment rows that touch the remixed cap and arm are rewritten to show only our side.
+Two kinds of page:
+- Our own CAD (the TX parts, the pod boxes, the test prints): published to `everyone`.
+- Anything derived from the radiation shield's 3MF (unknown licence): see RESTRICTED below. Those pages are published
+  restricted to Clint's login only, and nothing they hold is committed. The public pages and the index never show a
+  shield mesh, render or number: the shield's sections are skipped there, and the attachment rows that touch the
+  remixed cap and arm are rewritten to show only our side.
 """
 import html
 import json
 import re
 import shutil
+import struct
+import subprocess
 import sys
 from pathlib import Path
+
+import numpy as np
 
 HERE = Path(__file__).resolve().parent
 HW = HERE.parent
@@ -26,7 +34,7 @@ BODY_C, LID_C = "#e4ddcf", "#b9c8d0"          # light PETG, the lid a touch cool
 UV_AXIS = (10.16, 13.375)                       # the crown's axis in the board frame (PRINTED-PARTS.md, UV crown body)
 POD_LID_AT = 18.14 + 9.5                        # TH/BARO: rim z 18.14 less the back face z -9.5
 UV_LID_AT = 20.84 + 9.5                         # UV: the ledge z 20.84 less the floor z -9.5
-NOT_SHOWN = "the shield {} (built locally, not shown)"
+NOT_SHOWN = "the remixed shield {} (restricted page)"
 
 READY = ("ok", "ready to print")
 POD_SHARED = ["Walls", "Inside corner", "Clearance", "Gland nut", "Gland hole", "M3 heat-set", "Board standoffs",
@@ -257,10 +265,11 @@ def to_md_row(c):
 
 ATTACH = first_table(section("## Attachment points"))
 ATTACH_HEAD = ATTACH[:2]
-ATTACH_ROWS = {}
+ATTACH_ROWS, ATTACH_ORIG = {}, {}
 for r in ATTACH[2:]:
     c = cells(r)
     n = int(c[0])
+    ATTACH_ORIG[n] = r
     ATTACH_ROWS[n] = to_md_row(ROW_OVERRIDE[n]) if n in ROW_OVERRIDE else r
 
 SUMMARY = first_table(section("## Summary"))
@@ -425,6 +434,381 @@ def part_page(p, out):
     return d
 
 
+# ---------------------------------------------------------------- scene pages (several parts in place)
+#
+# LICENCE RULE. The radiation shield's 3MF (pods-r1 sources.shield_3mf) has an unknown licence. Clint ruled on
+# 2026-11-24 that a page holding anything derived from it (its meshes, the remixed cap and arm, renders, or numbers
+# measured off them, and the pod boxes placed by remix.box_pose) may go up ONLY as `restricted` to his own login, never
+# `everyone`. Every such page is in this list; publish.sh publishes these with visibility=restricted and an allow list
+# of the whoami account alone, reads the settings back, and deletes the artifact if they don't match. Nothing they hold
+# is ever committed: it is built into out/ (gitignored) on each run.
+RESTRICTED = ["printed-pod-bracket", "printed-shield-cap", "printed-shield-stock", "printed-assembly"]
+
+# The full assembly. The repo gives the TX box and the shield no position relative to each other on the pole, so the
+# page places them with these, and says so. Both hang on the same side of the pole, facing the same way.
+POLE_D = 42.2            # ASSUMED pole OD: 1-1/4 in pipe, inside the earthing strap's 1/2-2 in range (tx README)
+POLE_GAP = 250.0         # ASSUMED: the shield's lowest printed point this far above the end of the TX base's top flange
+POLE_BELOW = 150.0       # the pole drawn this far below the TX base's bottom flange
+POLE_ABOVE = 20.0        # and this far above the top of the shield arm's upright
+
+MESHES = HERE / "out" / "_meshes"          # main() points this at OUTDIR/_meshes
+SCENE_SCRIPTS = SCRIPTS.replace("viewer.js", "assembly.js")
+COL = {"tx-base": "#d8cfbd", "tx-lid-outline": "#7fb2d6", "tx-shade": "#fafaf7", "tx-clips": "#d0703c",
+       "tx-bar": "#7b5cc4", "shield-arm": "#e09a3a", "shield-cap": "#d9b03a", "shield-cup": "#c6ccd2",
+       "shield-stand": "#9aa3ab", "shield-plate": "#e8ecef", "pod-th-body": "#6fa67a", "pod-th-lid": "#a9d3b1",
+       "pod-baro-body": "#4f86b8", "pod-baro-lid": "#9cc2e3", "pod-uv-body": "#b8577a", "pod-uv-lid": "#e0a3b9",
+       "pole": "#7b8288"}
+NAMES = {"tx-base": "TX base (enclosure 4)", "tx-lid-outline": "#905 clear lid (bought; outline only)",
+         "tx-shade": "lid shade", "tx-clips": "EVM front clips", "tx-bar": "retention bar",
+         "shield-arm": "remixed L-arm (pod bracket)", "shield-cap": "remixed top cap", "shield-cup": "shield base cup",
+         "shield-stand": "shield stand", "shield-plate": "louver plates (6)", "pod-th-body": "TH pod body",
+         "pod-th-lid": "TH pod lid", "pod-baro-body": "BARO pod body", "pod-baro-lid": "BARO pod lid",
+         "pod-uv-body": "UV crown body", "pod-uv-lid": "UV crown lid (dome)", "pole": "pole (plain cylinder, assumed OD)"}
+TX_EXPLODE = {"tx-lid-outline": 70, "tx-clips": 110, "tx-bar": 140, "tx-shade": 190}   # mm along -Y, out of the lid
+EYE = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
+
+
+def run_meshes(mode):
+    d = MESHES / mode
+    if d.exists():
+        shutil.rmtree(d)
+    subprocess.run([sys.executable, "-B", str(HERE / "meshes.py"), mode, str(d)], check=True)
+    return json.loads((d / f"{mode}.json").read_text())
+
+
+def read_stl(path):
+    b = Path(path).read_bytes()
+    n = struct.unpack("<I", b[80:84])[0]
+    assert len(b) == 84 + 50 * n, f"{path}: not a binary STL"
+    rec = np.frombuffer(b[84:], dtype=[("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")])
+    return rec["v"].reshape(-1, 3).astype(float), n
+
+
+def entry(key, info=None, src=None, m=None, explode=(0, 0, 0), hidden=False, note=None, opacity=None, **kw):
+    e = dict(key=key, label=kw.pop("label", NAMES.get(key, key)), color=kw.pop("color", COL.get(key, "#cccccc")),
+             m=m or EYE, explode=[round(float(x), 3) for x in explode], hidden=hidden, src=src)
+    if info:
+        e["src"] = info["src"]
+        for k in ("instances", "instance_explode"):
+            if k in info:
+                e[k] = info[k]
+    if note:
+        e["note"] = note
+    if opacity is not None:
+        e["opacity"] = opacity
+    e.update(kw)
+    return e
+
+
+def scene_rail(explode=True):
+    return ('<div class="rail">'
+            + ('<label for="explode">take apart <input type="range" id="explode" min="0" max="1" step="0.01" value="0">'
+               ' <output id="explode-v"></output></label>' if explode else '') +
+            '<label for="cut"><input type="checkbox" id="cut"> cut</label>'
+            '<label for="cut-at">at <input type="range" id="cut-at" min="0.01" max="0.99" step="0.01" value="0.5">'
+            ' <output id="cut-v"></output></label>'
+            '<label for="cut-axis">across <select id="cut-axis"><option value="x">x</option><option value="y">y</option>'
+            '<option value="z">z</option></select></label>'
+            '<label for="cut-flip"><input type="checkbox" id="cut-flip"> keep the other side</label>'
+            '<button type="button" id="all">show all</button><button type="button" id="none">hide all</button>'
+            '<button type="button" id="spin">stop turning</button><button type="button" id="reset">reset view</button>'
+            '</div>')
+
+
+def scene_page(out, slug, title, sub, b, desc, entries, sections, facts=(), downloads=(), view_note="", lede=None,
+               explode=True):
+    """A page with the scene viewer: entries go to scene.json (their STLs copied in), sections are HTML strings."""
+    d = out / slug
+    if d.exists():
+        shutil.rmtree(d)
+    d.mkdir(parents=True)
+    restricted = slug in RESTRICTED
+    meshes = []
+    for e in entries:
+        e = dict(e)
+        src = e.pop("src")
+        if src is not None:
+            src = Path(src)
+            name = src.name
+            if not (d / name).exists():
+                shutil.copy2(src, d / name)
+            e["file"] = name
+        meshes.append(e)
+    for src, name in downloads:
+        shutil.copy2(src, d / name)
+    (d / "scene.json").write_text(json.dumps(dict(meshes=meshes)))
+    shutil.copy2(HERE / "assembly.js", d / "assembly.js")
+    body = [f'<header><a class="back" href="{HOST + INDEX}/" target="_top">&larr; all printed parts</a>'
+            f'<div class="eyebrow">printed part · {html.escape(sub)}</div><h1>{html.escape(title)}</h1>{badge(b)}'
+            f'<p class="lede">{html.escape(lede or desc.split(". ")[0] + ".")}</p></header>']
+    if restricted:
+        body.append('<p class="restricted">Restricted to Clint\'s login. This page holds shapes from the radiation '
+                    'shield\'s 3MF, whose licence is unknown, so it never goes up as <code>everyone</code> and none of '
+                    'it is in git.</p>')
+    hint = ("Drag to turn, pinch or scroll to zoom, right-drag to pan. Tick a part in the key to show or hide it. "
+            + ("&lsquo;Take apart&rsquo; pulls the parts away from each other. " if explode else "")
+            + "&lsquo;Cut&rsquo; slices the view across x, y or z (mm, Z up).")
+    if view_note:
+        hint += " " + html.escape(view_note)
+    body.append('<figure class="stage">'
+                f'<div id="view" role="img" aria-label="3D model of the {html.escape(title)}; drag to turn"></div>'
+                '<div id="status">loading the model…</div>' + scene_rail(explode)
+                + '<div class="legend" id="legend" aria-label="Key: show or hide each part"></div>'
+                f'<div class="hint">{hint}</div></figure>')
+    if facts or downloads:
+        fx = "".join(f'<div class="fact"><b>{html.escape(k)}</b><span>{inline(v)}</span></div>' for k, v in facts)
+        dls = "".join(f'<a class="dl" href="{n}" download>Download {n}</a>' for _s, n in downloads)
+        body.append((f'<section class="facts" aria-label="Key facts">{fx}</section>' if facts else "")
+                    + (f'<div style="display:flex;flex-wrap:wrap;gap:10px">{dls}</div>' if dls else ""))
+    body += sections
+    body.append('<p class="note">Source: <code>hardware/PRINTED-PARTS.md</code> and the CAD it quotes. Rebuild this page '
+                'with <code>sh hardware/printed-parts-pages/publish.sh</code>.</p>')
+    (d / "index.html").write_text(page(title + " · printed part", desc, "\n".join(body), SCENE_SCRIPTS))
+    return d
+
+
+def attach_section(rows, original=False, note=""):
+    src = ATTACH_ORIG if original else ATTACH_ROWS
+    t = ATTACH_HEAD + [src[n] for n in rows]
+    return (f'<section><h2>Attachment points</h2>{f"<p class=lede>{html.escape(note)}</p>" if note else ""}'
+            f'{table_html(t)}</section>')
+
+
+def checks_section(title, lines, cmd):
+    return (f'<section><h2>{html.escape(title)}</h2><p class="lede">Printed by <code>{html.escape(cmd)}</code> when '
+            f'this page was built.</p><pre><code>{html.escape(chr(10).join(lines))}</code></pre></section>')
+
+
+def by_key(info):
+    out = {}
+    for e in info["meshes"]:
+        e = dict(e)
+        e["src"] = MESHES / ("tx" if e["frame"] == "hung" else "shield") / e["file"]
+        out[e["key"]] = e
+    return out
+
+
+def size(e):
+    return " x ".join(f"{h - l:.1f}" for l, h in zip(e["lo"], e["hi"]))
+
+
+def tx_base_page(out, tx):
+    k = by_key(tx)
+    gate = ", ".join(f"`{g}`" for g in tx["gate"]) or "none"
+    ents = [entry("tx-base", k["tx-base"])]
+    for key in ("tx-clips", "tx-bar", "tx-shade", "tx-lid-outline"):
+        ents.append(entry(key, k[key], explode=[0, -TX_EXPLODE[key], 0], hidden=key in ("tx-shade", "tx-lid-outline"),
+                          note="its own page" if key != "tx-lid-outline" else None,
+                          opacity=0.35 if key == "tx-lid-outline" else None))
+    b = k["tx-base"]
+    facts = [("Material", "PETG (the `cage.py` header)"), ("Envelope (mm, as hung: across x up the pole x deep)", size(b)),
+             ("Volume, mass", f"{b['cm3']:.1f} cm³, about {b['cm3'] * 1.27:.0f} g solid"), ("Quantity", "1"),
+             ("Status", f"settled, but the STL is gated: `cage.py --stl` refuses until {gate} are sourced")]
+    secs = [f"<section><h2>Features of the base, not separate prints</h2>{md_html(section('## Features of the base, not separate prints'))}</section>",
+            '<section><h2>Interfaces on the base</h2><p class="lede">From PRINTED-PARTS.md (box frame, mm).</p>'
+            + table_html(BASE_IF) + "</section>",
+            attach_section([1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 25])]
+    return scene_page(out, "printed-tx-base", "TX base (enclosure 4)", "tx-stack-r1 · cage.py",
+                      ("no", "gated: " + ", ".join(tx["gate"]) + " (no print file)"),
+                      "The printed TX box itself, enclosure 4 with its two fixes: walls, lip, corner blocks, slots, "
+                      "ledges, tray and flanges. Preview 3D view and numbers.", ents, secs, facts,
+                      view_note="A preview built here from cage.py's shell_solid() and its moulded parts through "
+                                "true_frame(), hung as on the pole (Z up, the lid toward -y). There's no download: the "
+                                "base's STL is gated, and this mesh isn't a print file.")
+
+
+RETIRED = [(HW / "tx-stack-r1/cage/stl/rim-coupon.stl", "rim corner coupon r8"),
+           (HW / "tx-stack-r1/cage/stl/rim-edge-long.stl", "rim edge strip, long"),
+           (HW / "tx-stack-r1/cage/stl/rim-edge-short.stl", "rim edge strip, short")] + \
+          [(HW / f"pods-r1/box/v1/pod-{n}-{p}.stl", f"pod box v1: {n.upper()} {p}")
+           for n in ("th", "baro", "uv") for p in ("body", "lid")]
+
+
+def retired_page(out):
+    ents, x = [], {0: 0.0, 1: 0.0}
+    pal = ["#c9c2b4", "#b4bdc4", "#c4b4bd"]
+    for i, (src, label) in enumerate(RETIRED):
+        v, _n = read_stl(src)
+        lo, hi = v.min(0), v.max(0)
+        row = int(src.parent.name == "v1")             # the rim tests in one row, the v1 boxes in the row in front
+        m = [1, 0, 0, x[row] - lo[0], 0, 1, 0, -(lo[1] + hi[1]) / 2 - 220.0 * row, 0, 0, 1, -lo[2]]
+        x[row] += hi[0] - lo[0] + 15.0
+        key = "retired-" + src.parent.name + "-" + src.stem
+        e = entry(key, src=src, m=m, label=label, color=pal[i % 3] if i < 3 else ("#cfc8b6" if "body" in label else "#b9c8d0"))
+        ents.append(e)
+    # v1 STLs share names with the current ones: copy them under their own names
+    d = out / "_retired"
+    d.mkdir(parents=True, exist_ok=True)
+    for e, (src, _l) in zip(ents, RETIRED):
+        dst = d / (("v1-" if src.parent.name == "v1" else "") + src.name)
+        shutil.copy2(src, dst)
+        e["src"] = dst
+    secs = ['<section><h2>What these are</h2><ul>'
+            '<li><code>tx-stack-r1/cage/stl/rim-coupon.stl</code>, <code>rim-edge-long.stl</code>, '
+            '<code>rim-edge-short.stl</code>: earlier rim tests (the corner coupon r8 and two edge strips). The rim test '
+            'ring replaced them.</li>'
+            '<li><code>pods-r1/box/v1/*.stl</code>: the v1 pod boxes from Clint\'s CAD agent (2026-11-18). The current '
+            'TH and BARO boxes in <code>box/stl/</code> build the same features, and the v1 UV box was replaced by the '
+            'crown on 2026-11-19.</li></ul>'
+            '<p>PRINTED-PARTS.md says don\'t print any of them. They stay in the repo as history, so there are no '
+            'downloads here.</p></section>']
+    return scene_page(out, "printed-retired", "Retired test prints and v1 pod boxes", "tx-stack-r1 · pods-r1",
+                      ("no", "retired: don't print"),
+                      "The STLs still in the repo that you shouldn't print: the old rim coupon and edge strips, and the "
+                      "v1 pod boxes. 3D view only.", ents, secs,
+                      view_note="Laid out in two rows, each as its STL lies.", explode=False)
+
+
+def shield_lines(checks, start, stop=None):
+    i = next(k for k, ln in enumerate(checks) if ln.startswith(start))
+    j = next((k for k, ln in enumerate(checks) if stop and ln.startswith(stop) and k > i), len(checks) - 1)
+    return checks[i:j]
+
+
+def bracket_page(out, sh):
+    k = by_key(sh)
+    ents = [entry("shield-arm", k["shield-arm"])]
+    for n in ("th", "baro"):
+        for p in ("body", "lid"):
+            key = f"pod-{n}-{p}"
+            ents.append(entry(key, k[key], explode=k[key]["explode"], note="its own page"))
+    ents.append(entry("shield-cup", k["shield-cup"], hidden=True))
+    a, pose = k["shield-arm"], sh["poses"]["arm_remixed"]
+    facts = [("Material", "not stated in the code"),
+             ("Envelope (mm, print pose)", " x ".join(f"{x:.1f}" for x in pose["size"])),
+             ("Volume, mass", f"{a['cm3']:.1f} cm³, about {a['cm3'] * 1.27:.0f} g solid"),
+             ("Triangles", str(pose["tris"])), ("Quantity", "1"),
+             ("Status", "LOCAL-ONLY in the doc: the STL is built from the shield's 3MF and never goes in git")]
+    lines = shield_lines(sh["checks"], "arm:", "TH to BARO") + shield_lines(sh["checks"], "TH lead", "remix:")
+    secs = [f"<section><h2>From PRINTED-PARTS.md</h2>{md_html(section('### Remixed L-arm'), hshift=1)}</section>",
+            checks_section("Checks and their numbers", lines + [sh["checks"][-1]], "remix.py: remix_checks()"),
+            attach_section([17, 24], original=True)]
+    return scene_page(out, "printed-pod-bracket", "Pod bracket (remixed L-arm)", "pods-r1 · shield/remix.py",
+                      ("test", "local only: build with remix.py"),
+                      "The shield's L-arm with a face for the TH box and one for the BARO box, on the pole mount the "
+                      "radiation shield uses. 3D view, numbers and its STL.", ents, secs, facts,
+                      downloads=[(MESHES / "shield/arm_remixed.stl", "arm_remixed.stl")],
+                      view_note="Shown in the shield frame (Z up, the pole behind the upright at -y), with the TH and "
+                                "BARO boxes where remix.box_pose() puts them. The download is in its print pose, on the "
+                                "upright's back face.")
+
+
+def cap_page(out, sh):
+    k = by_key(sh)
+    ents = [entry("shield-cap", k["shield-cap"])]
+    for p in ("body", "lid"):
+        key = f"pod-uv-{p}"
+        ents.append(entry(key, k[key], explode=[0, 0, k[key]["explode"][2] - 160], note="its own page"))
+    ents.append(entry("shield-plate", k["shield-plate"], hidden=True))
+    c, pose = k["shield-cap"], sh["poses"]["cap_remixed"]
+    facts = [("Material", "not stated in the code"),
+             ("Envelope (mm, print pose)", " x ".join(f"{x:.1f}" for x in pose["size"])),
+             ("Volume, mass", f"{c['cm3']:.1f} cm³, about {c['cm3'] * 1.27:.0f} g solid"),
+             ("Triangles", str(pose["tris"])), ("Quantity", "1"),
+             ("Status", "LOCAL-ONLY in the doc: the STL is built from the shield's 3MF and never goes in git")]
+    secs = [f"<section><h2>From PRINTED-PARTS.md</h2>{md_html(section('### Remixed top cap'), hshift=1)}</section>",
+            checks_section("Checks and their numbers", shield_lines(sh["checks"], "cap:", "arm:") + [sh["checks"][-1]],
+                           "remix.py: remix_checks()"),
+            attach_section([23], original=True)]
+    return scene_page(out, "printed-shield-cap", "Shield top cap (remixed)", "pods-r1 · shield/remix.py",
+                      ("test", "local only: build with remix.py"),
+                      "The shield's top cap with a skirt and four screw bosses that carry the UV crown. 3D view, "
+                      "numbers and its STL.", ents, secs, facts,
+                      downloads=[(MESHES / "shield/cap_remixed.stl", "cap_remixed.stl")],
+                      view_note="Shown in the shield frame with the UV crown on it. The louver plates are in the key "
+                                "(hidden to start). The download is in its print pose, on its flat top.")
+
+
+def stock_page(out, sh):
+    k = by_key(sh)
+    ents = [entry("shield-cup", k["shield-cup"], explode=[0, 0, 15]),
+            entry("shield-stand", k["shield-stand"], explode=[0, 0, 35]),
+            entry("shield-plate", k["shield-plate"])]
+    rows = [("shield base cup (object_67)", k["shield-cup"]), ("shield stand (object_68)", k["shield-stand"]),
+            ("louver plate (object_79), print 6", k["shield-plate"])]
+    t = ["| Part | Envelope in place (mm) | Volume | Triangles |", "|---|---|---|---|"]
+    t += [f"| {n} | {size(e)} | {e['cm3']:.2f} cm³ | {e['tris']} |" for n, e in rows]
+    secs = ['<section><h2>What these are</h2><p>The rest of the radiation shield: Clint\'s 3MF '
+            '(<code>sources.shield_3mf</code>) as he got it, unchanged. Print them from the 3MF. They\'re here so every '
+            'print in the station has a page. <code>shield/assemble.py</code> stacks them from their mating features: '
+            'the cup\'s foot in the arm\'s pocket, the stand on the cup\'s disc, each plate\'s posts on the one below '
+            '(15 mm pitch), and the cap on plate 6.</p>' + table_html(t) + "</section>"]
+    return scene_page(out, "printed-shield-stock", "Shield cup, stand and louver plates", "the shield 3MF, unchanged",
+                      ("ok", "print from the 3MF as supplied"),
+                      "The shield parts we don't change: the base cup, the stand and six louver plates, stacked as "
+                      "assemble.py places them. 3D view only.", ents, secs,
+                      view_note="Shown in the shield frame. No downloads: print these from Clint's 3MF.")
+
+
+def assembly_page(out, tx, sh):
+    kt, ks = by_key(tx), by_key(sh)
+    r = POLE_D / 2
+    yb = sh["upright_back_y"]
+    m_tx = [1, 0, 0, 0, 0, 1, 0, -r, 0, 0, 1, 0]                 # hung frame: back face on the pole's surface
+    dz = tx["flange_z"][1] + POLE_GAP - sh["lowest_z"]
+    m_sh = [-1, 0, 0, 0, 0, -1, 0, yb - r, 0, 0, 1, dz]         # shield frame turned 180 about the pole, raised dz
+    ents = []
+    for key in ("tx-base", "tx-lid-outline", "tx-shade", "tx-clips", "tx-bar"):
+        ents.append(entry(key, kt[key], m=m_tx, explode=[0, -TX_EXPLODE.get(key, 0), 0],
+                          opacity=0.35 if key == "tx-lid-outline" else None))
+    for key in ("shield-arm", "pod-th-body", "pod-th-lid", "pod-baro-body", "pod-baro-lid", "shield-cup",
+                "shield-stand", "shield-plate", "shield-cap", "pod-uv-body", "pod-uv-lid"):
+        e = ks[key]
+        ex = e["explode"]
+        ents.append(entry(key, e, m=m_sh, explode=[-ex[0], -ex[1], ex[2]]))
+    top = dz + max(e["hi"][2] for e in sh["meshes"] if e["key"] == "shield-arm")
+    z0, z1 = tx["flange_z"][0] - POLE_BELOW, top + POLE_ABOVE
+    ents.append(entry("pole", None, explode=[0, 0, 0], metal=True,
+                      cylinder=dict(r=r, z0=round(z0, 2), z1=round(z1, 2), x=0, y=0)))
+    facts = [("Pole", f"a plain cylinder, Ø{POLE_D:g} assumed (1-1/4 in pipe), Z {z0:.0f} to {z1:.0f}"),
+             ("TX box", "back face on the pole, flanges centred on it, lid facing -y (cage.py frames)"),
+             ("Shield", f"upright's back face on the pole, raised so its lowest printed point is {POLE_GAP:g} mm above "
+                        "the TX base's top flange (assumed)")]
+    secs = ['<section><h2>How it\'s placed</h2><ul>'
+            '<li><strong>TX box.</strong> Every TX part comes from <code>cage.py</code> in its box frame and goes through '
+            '<code>true_frame()</code> (the real hand), then is turned so Zb is up. The base\'s back face (Yb −3) sits on '
+            'the pole\'s surface with the mounting flanges centred on the pole, as the base hangs (README: by its back, '
+            'long side vertical, two hose clamps through the flange slots). The lid shade sits where '
+            '<code>shade_solid()</code> builds it, 12 mm over the lid. The #905 lid is a bought part, and the repo only '
+            'knows its outline, so it\'s drawn as a see-through 2 mm shell of that outline.</li>'
+            '<li><strong>Shield.</strong> The cup, stand, plates and cap are where <code>assemble.py placements()</code> '
+            'puts them (from their mating features). The remixed cap and arm come from <code>remix.py</code> in the same '
+            'frame, and the TH, BARO and UV boxes go in by <code>remix.box_pose()</code>. remix.py puts the pole behind '
+            'the arm\'s upright, so the upright\'s back face sits on the pole\'s surface here.</li>'
+            '<li><strong>What the repo doesn\'t say.</strong> Nothing in the code gives the TX box and the shield a '
+            'position relative to each other, or the pole\'s size. This page assumes: a Ø'
+            f'{POLE_D:g} pole; both on the same side of it, facing the same way; and the shield\'s lowest printed point '
+            f'{POLE_GAP:g} mm above the end of the TX base\'s top flange. That gap also clears the AE1 antenna, which '
+            'stands about 70 mm above the top wall. Change <code>POLE_D</code> and <code>POLE_GAP</code> in '
+            '<code>build.py</code> to move them.</li>'
+            '<li><strong>Not drawn.</strong> Clint\'s printed lid bolts (his STL isn\'t in the repo), the hose clamps, '
+            'screws, glands, boards, cables and the antenna.</li></ul></section>',
+            attach_section([1, 3, 4, 6, 10, 14, 17, 18, 23, 24, 25], original=True)]
+    return scene_page(out, "printed-assembly", "Full printed assembly", "tx-stack-r1 · pods-r1 · shield",
+                      ("test", "assembly view"),
+                      "Every 3D-printed part in place on one pole: the TX box with its lid shade, clips and retention "
+                      "bar, and the radiation shield with the pod bracket, the TH and BARO boxes, the remixed cap and the "
+                      "UV crown.", ents, secs, facts,
+                      lede="Every 3D-printed part in its real position, on one pole.",
+                      view_note="The TX box and the shield sit on the pole with an assumed spacing (see below).")
+
+
+def public_guard(out, pages):
+    """Belt and braces for the licence rule: no public page may hold a shield-derived file."""
+    for slug in pages:
+        if slug in RESTRICTED:
+            continue
+        for f in (out / slug).rglob("*"):
+            if f.is_file() and (re.search(r"shield|remix|3mf|arm_|cap_", f.name, re.I) or
+                                f.resolve().is_relative_to((MESHES / "shield").resolve())):
+                raise SystemExit(f"refusing: {f} on public page {slug} looks shield-derived")
+            if f.suffix == ".stl" and f.read_bytes()[:16].startswith(b"shield-derived"):
+                raise SystemExit(f"refusing: {f} on public page {slug} is shield-derived")
+        sj = out / slug / "scene.json"
+        if sj.exists() and re.search(r'"(shield|pod)-', sj.read_text()):
+            raise SystemExit(f"refusing: {sj} names a shield-frame mesh")
+
+
 def index_page(out, urls):
     d = out / INDEX
     if d.exists():
@@ -436,16 +820,26 @@ def index_page(out, urls):
         for n in (p["summary"] if isinstance(p["summary"], list) else [p["summary"]]):
             by_summary[summary_row(n)[0]] = p
     body = ['<header><div class="eyebrow">weather station · hardware</div><h1>Printed parts</h1>'
-            '<p class="lede">Every 3D-printed part for the weather station except the TX base itself. Each part has '
-            'its own page with a 3D view you can turn and cut, its numbers, and its STL. Everything comes from '
+            '<p class="lede">Every 3D-printed part for the weather station. Each part has its own page with a 3D view '
+            'you can turn and cut, its numbers, and its STL where there is one. Everything comes from '
             '<code>hardware/PRINTED-PARTS.md</code>, which takes its numbers from the CAD code. Mass is solid PETG '
             'at 1.27 g/cm³, so it\'s an upper bound, and print times use 3.6 min/cm³. The printer is the Bambu H2D.'
             '</p></header>']
     cards = []
-    for p in PARTS:
-        cards.append(f'<a class="card" href="{url(p["slug"])}" target="_top"><strong>{html.escape(p["title"])}</strong>'
-                     f'{badge(p["badge"])}<span class="m">{html.escape(p["sub"])}</span></a>')
-    body.append('<section><h2>The pages</h2><div class="cards">' + "".join(cards) + "</div></section>")
+    for p in PARTS + SCENE_CARDS:
+        if p["slug"] in RESTRICTED:     # name only: no badge, numbers or images from the shield on this public page
+            cards.append(f'<a class="card r" href="{url(p["slug"])}" target="_top"><strong>{html.escape(p["title"])} '
+                         f'(restricted)</strong><span class="m">{html.escape(p["sub"])}</span></a>')
+        else:
+            cards.append(f'<a class="card" href="{url(p["slug"])}" target="_top"><strong>{html.escape(p["title"])}'
+                         f'</strong>{badge(p["badge"])}<span class="m">{html.escape(p["sub"])}</span></a>')
+    body.append('<section><h2>The pages</h2><div class="cards">' + "".join(cards) + "</div>"
+                '<p class="note">The pages marked (restricted) hold shapes from the radiation shield\'s 3MF, whose '
+                'licence is unknown, so only Clint\'s login can open them.</p></section>')
+
+    for c in SUMMARY_ROWS:
+        if c.startswith(("Rim corner coupon", "Pod boxes v1")):
+            by_summary[c] = dict(slug="printed-retired")
 
     def link_summary(k, c):
         if k == 0 and c in by_summary:
@@ -454,11 +848,14 @@ def index_page(out, urls):
     srows = SUMMARY[:2] + [r for r in SUMMARY[2:] if "shield" not in cells(r)[0].lower()]
     body.append('<section><h2>Summary</h2>' + table_html(srows, link_summary)
                 + '<p class="note">The shield cap and arm are built locally from a model with an unknown licence, '
-                  'so they aren\'t shown on these pages.</p></section>')
+                  f'so their rows are left out here. Their pages are restricted: <a href="{url("printed-shield-cap")}" '
+                  f'target="_top">shield top cap (restricted)</a> and <a href="{url("printed-pod-bracket")}" '
+                  'target="_top">pod bracket (restricted)</a>. The TX base has its own page too: '
+                  f'<a href="{url("printed-tx-base")}" target="_top">TX base</a>.</p></section>')
 
     q = section("## Print queue")
-    q = [("9. The shield cap and arm, built locally (not shown here), after the pod boxes." if ln.startswith("9.") else ln)
-         for ln in q]
+    q = [("9. The remixed shield cap and arm, built locally, after the pod boxes (QCAP and QARM, restricted)."
+          if ln.startswith("9.") else ln) for ln in q]
     qh = md_html(q)
     links = {"rim-ring.stl": "printed-rim-ring", "coupon.stl": "printed-base-coupon", "evm-clips.stl": "printed-evm-clips",
              "pod-uv-body.stl": "printed-uv-crown-body", "lid-shade.stl": "printed-lid-shade",
@@ -468,6 +865,8 @@ def index_page(out, urls):
     qh = qh.replace("<strong>TH and BARO bodies and lids</strong>",
                     f'<strong>TH and BARO bodies and lids</strong> (<a href="{url("printed-pod-th")}" target="_top">TH</a>, '
                     f'<a href="{url("printed-pod-baro")}" target="_top">BARO</a>)')
+    qh = qh.replace("QCAP", f'<a href="{url("printed-shield-cap")}" target="_top">cap page</a>').replace(
+        "QARM", f'<a href="{url("printed-pod-bracket")}" target="_top">bracket page</a>')
     qh = qh.replace("<strong>Retention bar</strong>",
                     f'<strong><a href="{url("printed-retention-bar")}" target="_top">Retention bar</a></strong>')
     body.append("<section><h2>Print queue</h2>" + qh + "</section>")
@@ -495,16 +894,105 @@ def index_page(out, urls):
     return d
 
 
+API = "https://artifacts.folk-fujita.ts.net/api/v1"
+
+
+def curl(*args, data=None):
+    r = subprocess.run(["curl", "-sS", "-m", "300", *args], input=data, capture_output=True, check=True)
+    return r.stdout
+
+
+def publish_one(slug, d, vis, account):
+    """PUT one page folder with its visibility, then read the settings back. A restricted page whose settings don't
+    read back as restricted to `account` alone is deleted at once."""
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        for f in sorted(d.rglob("*")):
+            if f.is_file():
+                t.add(f, arcname=str(f.relative_to(d)))
+    q = f"visibility={vis}" + (f"&allow={account}" if vis == "restricted" else "")
+    res = json.loads(curl("-f", "-X", "PUT", f"{API}/artifacts/{slug}?{q}", "-H", "Content-Type: application/gzip",
+                          "--data-binary", "@-", data=buf.getvalue()))
+    got = json.loads(curl("-f", f"{API}/artifacts/{slug}"))
+    ok = got["visibility"] == vis and (vis != "restricted" or got.get("allowed") == [account])
+    if not ok:
+        if vis == "restricted":
+            curl("-X", "DELETE", f"{API}/artifacts/{slug}?forever=1")
+            raise SystemExit(f"{slug}: settings read back as {got['visibility']} {got.get('allowed')}, not restricted "
+                             f"to {account}: deleted it")
+        raise SystemExit(f"{slug}: visibility read back as {got['visibility']}, wanted {vis}")
+    url = res["url"]
+    bad = []
+    for f in sorted(d.rglob("*")):
+        if f.is_file():
+            rel = f.relative_to(d).as_posix()
+            code = curl("-o", "/dev/null", "-w", "%{http_code}", url + ("" if rel == "index.html" else rel)).decode()
+            if code != "200":
+                bad.append(f"{rel} {code}")
+    print(f"published v{res['version']} {url}  visibility {got['visibility']}"
+          + (f" allowed {got.get('allowed')}" if vis == "restricted" else "") + ("  BAD: " + ", ".join(bad) if bad else
+                                                                                  "  (every file 200)"))
+    if bad:
+        raise SystemExit(f"{slug}: files not served: {bad}")
+    return url, got
+
+
+def publish(out):
+    who = json.loads(curl("-f", f"{API}/whoami"))
+    account = who["account"]          # the host keys grants by the canonical account (whoami login is an alias of it)
+    pages = json.loads((out / "pages.json").read_text())
+    urls, report = {}, []
+    for pg in pages:
+        url, got = publish_one(pg["slug"], out / pg["slug"], pg["visibility"], account)
+        urls[pg["slug"]] = url
+        report.append(dict(slug=pg["slug"], url=url, visibility=got["visibility"], allowed=got.get("allowed")))
+    (out / "urls.json").write_text(json.dumps(urls, indent=1))
+    index_page(out, urls)
+    public_guard(out, [INDEX])
+    url, got = publish_one(INDEX, out / INDEX, "everyone", account)
+    report.append(dict(slug=INDEX, url=url, visibility=got["visibility"], allowed=got.get("allowed")))
+    (out / "published.json").write_text(json.dumps(report, indent=1))
+
+
+SCENE_CARDS = [
+    dict(slug="printed-tx-base", title="TX base (enclosure 4)", sub="tx-stack-r1 · cage.py", badge=("no", "gated: no print file")),
+    dict(slug="printed-pod-bracket", title="Pod bracket (remixed L-arm)", sub="pods-r1 · shield/remix.py"),
+    dict(slug="printed-shield-cap", title="Shield top cap (remixed)", sub="pods-r1 · shield/remix.py"),
+    dict(slug="printed-shield-stock", title="Shield cup, stand and louver plates", sub="the shield 3MF, unchanged"),
+    dict(slug="printed-assembly", title="Full printed assembly", sub="every printed part on one pole"),
+    dict(slug="printed-retired", title="Retired test prints and v1 pod boxes", sub="tx-stack-r1 · pods-r1",
+         badge=("no", "retired: don't print")),
+]
+
+
 def main():
+    global MESHES
     out = Path(sys.argv[1])
     urls = {}
     if "--urls" in sys.argv:
         urls = json.loads(Path(sys.argv[sys.argv.index("--urls") + 1]).read_text())
     out.mkdir(parents=True, exist_ok=True)
+    MESHES = out / "_meshes"
+    if "--publish" in sys.argv:
+        return publish(out)
     if "--index-only" not in sys.argv:
         for p in PARTS:
             print("built", part_page(p, out))
+        tx = run_meshes("tx")
+        sh = run_meshes("shield")
+        for d in (tx_base_page(out, tx), retired_page(out), bracket_page(out, sh), cap_page(out, sh),
+                  stock_page(out, sh), assembly_page(out, tx, sh)):
+            print("built", d)
+        slugs = [p["slug"] for p in PARTS + SCENE_CARDS]
+        assert set(RESTRICTED) <= set(slugs)
+        public_guard(out, slugs + [INDEX])
+        # what publish.sh reads: every page, its visibility, index last
+        pages = [dict(slug=s_, visibility="restricted" if s_ in RESTRICTED else "everyone") for s_ in slugs]
+        (out / "pages.json").write_text(json.dumps(pages, indent=1))
     print("built", index_page(out, urls))
+    public_guard(out, [INDEX])
 
 
 if __name__ == "__main__":
