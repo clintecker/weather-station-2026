@@ -178,6 +178,13 @@ def shield(out):
     info = dict(meshes=entries, poses=poses, upright_back_y=float(y_back), lowest_z=float(lo_all),
                 clamp_slots=[list(map(float, s)) for s in slots], cap_top_z=float(X.uv_mount()["top_z"]),
                 checks=X.remix_checks())
+    # the saddle and its strap tunnels, for the assembly page's pole placement and its two bracket straps
+    up = X.upright()
+    info["saddle"] = dict(pole_d=X.POLE_D, pole_axis=list(X.pole_axis(X.POLE_D)),
+                          contacts=[list(c) for c in X.pole_contacts(X.POLE_D)], planes=list(X.saddle_planes()),
+                          half_w=X.SADDLE_HALF_W, corner_r=X.SADDLE_CORNER_R, exit_r=X.STRAP_EXIT_R,
+                          slot=list(X.STRAP_SLOT), slot_z=list(X.STRAP_SLOT_Z), upright_z=[up["z0"], up["z1"]],
+                          tie=list(S.val("pole_strap_tie")[1:3]))
     (out / "shield.json").write_text(json.dumps(info, indent=1))
 
 
@@ -189,7 +196,8 @@ def meter(out):
     entries = []
     for key, shape, info in W.build(p):
         v, f = cq_mesh(shape, 0.1, 0.25)
-        write_stl(out / f"{key}.stl", v, f, b"SparkFun SEN-15901 stand-in (estimated)")
+        write_stl(out / f"{key}.stl", v, f, b"shield-derived: restricted pages only, never git" if key == "pole-straps"
+                  else b"SparkFun SEN-15901 stand-in (estimated)")
         e = dict(key=key, file=f"{key}.stl", frame="world", info=info, **stats(v, f))
         if "pivot" in info:
             e["pivot"] = info["pivot"]

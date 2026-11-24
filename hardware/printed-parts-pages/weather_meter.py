@@ -41,6 +41,7 @@ RAIN_CLAMP = (36.0, 36.0, 40.0)  # ESTIMATED: the rain arm's two-half clamp bloc
 CLAMP_W, CLAMP_T = 9.0, 0.8      # ESTIMATED: the kit's gear clamps, band width x thickness
 WORM = (14.0, 10.0, 8.0)   # ESTIMATED: a gear clamp's worm housing: along the band x tall x proud
 CABLE_D = 4.0              # ESTIMATED: the flat RJ11 cables, drawn round
+TIE_HEAD = (12.0, 10.5, 7.5)     # ESTIMATED: a Panduit PLT4H zip tie's head: along the band x tall x proud (not measured)
 
 
 def cyl(d, h, base=(0, 0, 0), axis=(0, 0, 1)):
@@ -73,17 +74,19 @@ def perimeter(pts):
     return sum(math.dist(pts[i], pts[i - 1]) for i in range(len(pts)))
 
 
-def gear_clamp(circles, z, worm_dir):
-    """A band round the hull of `circles` at height z (centred), with its worm housing on the side `worm_dir` (x, y)."""
+def gear_clamp(circles, z, worm_dir, w=CLAMP_W, t=CLAMP_T, head=WORM):
+    """A band w wide and t thick round the hull of `circles` at height z (centred), with its worm housing (or a zip
+    tie's head: `head` = along the band x tall x proud) on the side `worm_dir` (x, y). Returns (shape, the loop's
+    inner length as a circle's diameter, the inner length)."""
     inner = hull_pts(circles)
-    outer = hull_pts([(x, y, r + CLAMP_T) for x, y, r in circles])
-    band = (cq.Workplane("XY").workplane(offset=z - CLAMP_W / 2).polyline(outer).close().extrude(CLAMP_W)
-            .cut(cq.Workplane("XY").workplane(offset=z - CLAMP_W / 2 - 1).polyline(inner).close().extrude(CLAMP_W + 2)))
+    outer = hull_pts([(x, y, r + t) for x, y, r in circles])
+    band = (cq.Workplane("XY").workplane(offset=z - w / 2).polyline(outer).close().extrude(w)
+            .cut(cq.Workplane("XY").workplane(offset=z - w / 2 - 1).polyline(inner).close().extrude(w + 2)))
     far = max(outer, key=lambda p: p[0] * worm_dir[0] + p[1] * worm_dir[1])
     a = math.atan2(worm_dir[1], worm_dir[0])
-    w = (cq.Workplane("XY").box(WORM[2], WORM[0], WORM[1]).rotate((0, 0, 0), (0, 0, 1), math.degrees(a))
-         .translate((far[0] + math.cos(a) * WORM[2] / 2, far[1] + math.sin(a) * WORM[2] / 2, z)))
-    return band.union(w), perimeter(inner) / math.pi
+    hd = (cq.Workplane("XY").box(head[2], head[0], head[1]).rotate((0, 0, 0), (0, 0, 1), math.degrees(a))
+          .translate((far[0] + math.cos(a) * head[2] / 2, far[1] + math.sin(a) * head[2] / 2, z)))
+    return band.union(hd), perimeter(inner) / math.pi, perimeter(inner)
 
 
 def anemometer(x, z_arm):
@@ -146,7 +149,13 @@ def build(p):
     """p (from build.py, assembly frame: mm, Z up, the pole's axis on Z at x = y = 0, the TX box and the shield on
     the -y side): pole_r, pole_top, mast_overlap, mast_clamps (two depths below the pole's top), rain_below (the
     rain arm's top this far under the cross arm's top), glands {name: [x, y, z]} (the outside end of each meter
-    cable's PG-9 gland), drip (the drip loop's depth below a gland). Returns [(key, shape, info)].
+    cable's PG-9 gland), drip (the drip loop's depth below a gland), and optionally ties: the shield bracket's two
+    pole straps, dict(z=[two heights], circles=[(x, y, r)] (the saddle's rounded strap edges, which the loop wraps
+    with the pole), w, t). Returns [(key, shape, info)].
+
+    With ties, the two straps are one loop each round the saddle, the pole, the mast and the two RJ11 cables, which
+    run down the pole's +x side from near its top, so the straps that bind the bracket also hold the cables and the
+    mast (key "pole-straps": its shape comes from the shield's numbers, so it only goes on restricted pages).
 
     The two parts that move with the wind (meter-cups, the cup rotor; meter-vane, the vane) are their own meshes, and
     their info carries pivot = {at: [x, y, z], axis: [0, 0, 1]} in the assembly frame; their spindle housings are the
@@ -183,26 +192,48 @@ def build(p):
     out.append(("meter-rain-arm", rarm, dict(z=round(zr, 1), reach=RAIN_ARM_L)))
     out.append(("meter-rain", rain_gauge(0, my + RAIN_ARM_L, zr), dict(z=round(zr, 1))))
 
-    # the kit's two gear clamps: mast to pole
-    circ = [(0, 0, r), (0, my, MAST_D / 2)]
+    # the two RJ11 cables up the pole's +x side, side by side against it: WIND on +x, RAIN turned a little toward +y,
+    # both on the +y side of the bracket saddle's back plane (y = 0 and up), clear of the TX box's back
+    rc = CABLE_D / 2
+    pc = r + rc + 0.5
+    ca = 2 * math.asin((rc + 0.3) / pc)
+    on_pole = {"WIND": (pc, 0.0), "RAIN": (pc * math.cos(ca), pc * math.sin(ca))}
+    cable_circ = [(x, y, rc) for x, y in on_pole.values()]
+
+    # the kit's two gear clamps: mast to pole (and the cables beside them); with the bracket's straps, any clamp
+    # build.py dropped is one of those straps now
+    circ = [(0, 0, r), (0, my, MAST_D / 2)] + cable_circ
     clamps, loops = None, []
     for d in p["mast_clamps"]:
-        c, loop = gear_clamp(circ, p["pole_top"] - d, (1, 0))
+        c, loop, _L = gear_clamp(circ, p["pole_top"] - d, (1, 0))
         clamps = c if clamps is None else clamps.union(c)
         loops.append(round(loop, 1))
-    out.append(("meter-clamps", clamps, dict(loop_d=loops)))
+    if clamps is not None:
+        out.append(("meter-clamps", clamps, dict(loop_d=loops)))
 
-    # the RJ11 cables: from each meter down the mast and the pole to its gland, with a drip loop under the gland
-    rc = CABLE_D / 2
+    # the shield bracket's two pole straps: zip ties through the saddle's tunnels, round the pole, the mast and cables
+    ties = p.get("ties")
+    if ties:
+        tcirc = [tuple(c) for c in ties["circles"]] + [(0, 0, r), (0, my, MAST_D / 2)] + cable_circ
+        straps, lengths = None, []
+        for z in ties["z"]:
+            c, _d, L = gear_clamp(tcirc, z, (0, 1), w=ties["w"], t=ties["t"], head=TIE_HEAD)
+            straps = c if straps is None else straps.union(c)
+            lengths.append(round(L))
+        out.append(("pole-straps", straps, dict(z=[round(z, 1) for z in ties["z"]], loop_mm=lengths)))
+
+    # the RJ11 cables: from each meter down the mast and the pole to its gland, with a drip loop under the gland.
+    # With the bracket's straps they step from the mast onto the pole near its top and run down through both straps.
     cables, runs = None, {}
-    zpole = p["pole_top"] - p["mast_overlap"] + 30.0         # where the cables step from the mast onto the pole
+    zpole = (p["pole_top"] - 10.0 if ties else
+             p["pole_top"] - p["mast_overlap"] + 30.0)    # where the cables step from the mast onto the pole
     for name, dx in (("WIND", -1.0), ("RAIN", 1.0)):
         gx, gy, gz = p["glands"][name]
         off = dx * (rc + 0.6)
-        px = r + rc + 0.5                                   # up the pole's +x side, clear of the TX box's back
+        px, py = on_pole[name]
         mx = MAST_D / 2 + rc + 0.5
         pts = [(gx, gy, gz), (gx, gy, gz - p["drip"]), (gx * 0.4, gy * 0.5, gz - p["drip"] + 20.0),
-               (px, off, gz + 10.0), (px, off, zpole), (mx, my + off, zpole + 40.0)]
+               (px, py, gz + 10.0), (px, py, zpole), (mx, my + off, zpole + 40.0)]
         if name == "WIND":
             pts += [(mx, my + off, za - ARM_H / 2 - 4.0), (-SENSOR_AT + 25.0, my, za - ARM_H / 2 - rc - 0.5),
                     (-SENSOR_AT, my, za - ARM_H / 2 - rc - 0.5)]        # into the vane's base, under the arm

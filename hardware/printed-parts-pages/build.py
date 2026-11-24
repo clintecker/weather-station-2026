@@ -468,7 +468,8 @@ COL = {"tx-base": "#d8cfbd", "tx-lid-outline": "#7fb2d6", "tx-shade": "#fafaf7",
        # bought, not printed: one teal family, so the kit never reads as a print
        "meter-mast": "#2f7f86", "meter-arm": "#1f6f78", "meter-cups": "#48a9a6", "meter-vane": "#66c2bd",
        "meter-cups-housing": "#2a8f8c", "meter-vane-housing": "#2a8f8c",
-       "meter-rain-arm": "#1f6f78", "meter-rain": "#8fd3cc", "meter-clamps": "#b9c4c9", "meter-cables": "#22303a"}
+       "meter-rain-arm": "#1f6f78", "meter-rain": "#8fd3cc", "meter-clamps": "#b9c4c9", "meter-cables": "#22303a",
+       "pole-straps": "#2b2b2b"}
 NAMES = {"tx-base": "TX base (enclosure 4)", "tx-lid-outline": "#905 clear lid (bought; outline only)",
          "tx-shade": "lid shade", "tx-clips": "EVM front clips", "tx-bar": "retention bar",
          "shield-arm": "remixed L-arm (pod bracket)", "shield-cap": "remixed top cap", "shield-cup": "shield base cup",
@@ -479,7 +480,9 @@ NAMES = {"tx-base": "TX base (enclosure 4)", "tx-lid-outline": "#905 clear lid (
          "meter-cups": "anemometer cup rotor (turns)", "meter-vane": "wind vane (turns)",
          "meter-cups-housing": "anemometer spindle housing", "meter-vane-housing": "wind vane spindle housing", "meter-rain-arm": "rain gauge arm",
          "meter-rain": "rain gauge (tipping bucket)", "meter-clamps": "gear clamps (mast to pole)",
-         "meter-cables": "RJ11 cables to the TX box's PG-9 glands"}
+         "meter-cables": "RJ11 cables to the TX box's PG-9 glands",
+         "pole-straps": "bracket straps (2 Panduit PLT4H-C0 zip ties: saddle, pole, mast and cables)"}
+STRAP_GROUP = "Straps: bought"
 METER_GROUP = "Bought, not printed: SparkFun SEN-15901 weather meter kit (estimated shapes)"
 METER_KEYS = ("meter-mast", "meter-arm", "meter-cups-housing", "meter-cups", "meter-vane-housing", "meter-vane",
               "meter-rain-arm", "meter-rain", "meter-clamps", "meter-cables")
@@ -788,10 +791,20 @@ def stock_page(out, sh):
 def assembly_page(out, tx, sh):
     kt, ks = by_key(tx), by_key(sh)
     r = POLE_D / 2
-    yb = sh["upright_back_y"]
+    sd = sh["saddle"]
+    assert abs(sd["pole_d"] - POLE_D) < 1e-6, "remix.py's pole_axis() was taken for another pole"
+    px, py = sd["pole_axis"]                                    # where the pole's axis sits in the arm's saddle
     m_tx = [1, 0, 0, 0, 0, 1, 0, -r, 0, 0, 1, 0]                 # hung frame: back face on the pole's surface
     dz = tx["flange_z"][1] + POLE_GAP - sh["lowest_z"]
-    m_sh = [-1, 0, 0, 0, 0, -1, 0, yb - r, 0, 0, 1, dz]         # shield frame turned 180 about the pole, raised dz
+    m_sh = [-1, 0, 0, px, 0, -1, 0, py, 0, 0, 1, dz]            # shield frame turned 180 about Z, the saddle's pole axis
+    to_a = lambda x, y: (px - x, py - y)                        # on the pole's axis, raised dz: (x, y) shield to here
+    yb, ya, yr = sd["planes"]
+    hw, t_slot = sd["half_w"], sd["slot"][1]
+    # the bracket's two straps wrap the saddle at its rounded tunnel exits and back corners, then the pole
+    strap_circ = [(*to_a(sg * (hw - sd["exit_r"]), yb - t_slot - sd["exit_r"]), sd["exit_r"]) for sg in (-1, 1)] + \
+                 [(*to_a(sg * (hw - sd["corner_r"]), yr + sd["corner_r"]), sd["corner_r"]) for sg in (-1, 1)]
+    strap_z = [dz + z for z in sd["slot_z"]]
+    bracket_z = (dz + sd["upright_z"][0], dz + sd["upright_z"][1])
     ents = []
     for key in ("tx-base", "tx-lid-outline", "tx-shade", "tx-clips", "tx-bar"):
         ents.append(entry(key, kt[key], m=m_tx, explode=[0, -TX_EXPLODE.get(key, 0), 0],
@@ -809,22 +822,39 @@ def assembly_page(out, tx, sh):
                       cylinder=dict(r=r, z0=round(z0, 2), z1=round(z1, 2), x=0, y=0)))
     # the SparkFun kit, in this page's frame (weather_meter.py); its cables end at the TX box's WIND and RAIN glands
     glands = {k: [g[0], g[1] - r, g[2]] for k, g in tx["glands"].items()}
-    mt = run_meshes("meter", dict(pole_r=r, pole_top=z1, mast_overlap=METER_OVERLAP, mast_clamps=list(METER_CLAMPS),
-                                  rain_below=METER_RAIN_BELOW, glands=glands, drip=METER_DRIP))
+    # a kit gear clamp whose height falls on the bracket is one of the bracket's straps now (they hold the mast too)
+    kept = [d for d in METER_CLAMPS if not bracket_z[0] - 10.0 <= z1 - d <= bracket_z[1] + 10.0]
+    dropped = [d for d in METER_CLAMPS if d not in kept]
+    mt = run_meshes("meter", dict(pole_r=r, pole_top=z1, mast_overlap=METER_OVERLAP, mast_clamps=kept,
+                                  rain_below=METER_RAIN_BELOW, glands=glands, drip=METER_DRIP,
+                                  ties=dict(z=strap_z, circles=strap_circ, w=sd["tie"][0], t=sd["tie"][1])))
     km = by_key(mt)
     mex = {"meter-cups": [0, 0, 120], "meter-vane": [0, 0, 120], "meter-arm": [0, 0, 60],
            "meter-cups-housing": [0, 0, 60], "meter-vane-housing": [0, 0, 60], "meter-rain": [0, 60, 40],
            "meter-rain-arm": [0, 30, 0], "meter-clamps": [60, 0, 0]}
+    ents.append(entry("pole-straps", km["pole-straps"], group=STRAP_GROUP, bought=True))
     for key in METER_KEYS:
+        if key not in km:
+            continue
         mv = dict(pivot=km[key]["pivot"], moves=METER_MOVES[key]) if key in METER_MOVES else {}
         ents.append(entry(key, km[key], explode=mex.get(key, [0, 0, 0]), group=METER_GROUP, bought=True,
                           metal=key in ("meter-mast", "meter-clamps"), **mv))
     md, mi = mt["dims"], {e["key"]: e["info"] for e in mt["meshes"]}
     zm0, zm1 = mi["meter-mast"]["z"]
+    # the mast stays behind the pole (+y): the straps' loops take it in, and the saddle stops short of the pole's axis
+    y_back = to_a(0, yr)[1]
+    assert mi["meter-mast"]["y"] - md["MAST_D"] / 2 > y_back, "the kit's mast runs into the bracket's saddle"
+    st = mi["pole-straps"]
     facts = [("Pole", f"a plain cylinder, Ø{POLE_D:g} (about 1 in), Z {z0:.0f} to {z1:.0f}"),
              ("TX box", "back face on the pole, flanges centred on it, lid facing -y (cage.py frames)"),
-             ("Shield", f"upright's back face on the pole, raised so its lowest printed point is {POLE_GAP:g} mm above "
-                        "the TX base's top flange (assumed)"),
+             ("Shield", f"the arm's saddle on the pole: its V's flanks touch the pole, the pole's axis "
+                        f"{-py + yb:.1f} mm behind the upright's back face; raised so its lowest printed point is "
+                        f"{POLE_GAP:g} mm above the TX base's top flange (assumed)"),
+             ("Bracket straps (bought)", "two zip ties at Z " + " and ".join(f"{z:.0f}" for z in st["z"])
+                                         + f" ({z1 - st['z'][1]:.0f} and {z1 - st['z'][0]:.0f} mm below the pole's top), "
+                                         "each through its saddle tunnel and round the pole, the mast and both RJ11 "
+                                         "cables: about " + " / ".join(f"{L:g}" for L in st["loop_mm"])
+                                         + " mm of loop"),
              ("Weather meter (bought)", f"the kit's mast Z {zm0:.0f} to {zm1:.0f} against the pole's back, cross arm "
                                         f"at Z {mi['meter-arm']['z']:.0f}, rain arm top at Z {mi['meter-rain-arm']['z']:.0f}"
                                         " (assumed positions, estimated shapes)"),
@@ -839,8 +869,17 @@ def assembly_page(out, tx, sh):
             'knows its outline, so it\'s drawn as a see-through 2 mm shell of that outline.</li>'
             '<li><strong>Shield.</strong> The cup, stand, plates and cap are where <code>assemble.py placements()</code> '
             'puts them (from their mating features). The remixed cap and arm come from <code>remix.py</code> in the same '
-            'frame, and the TH, BARO and UV boxes go in by <code>remix.box_pose()</code>. remix.py puts the pole behind '
-            'the arm\'s upright, so the upright\'s back face sits on the pole\'s surface here.</li>'
+            'frame, and the TH, BARO and UV boxes go in by <code>remix.box_pose()</code>. The arm\'s saddle sits on '
+            'the pole: <code>remix.pole_axis()</code> for the Ø' f'{POLE_D:g} pole goes on the pole\'s axis, so the V\'s '
+            'two flanks touch the pole and the upright stands clear of it.</li>'
+            '<li><strong>Bracket straps.</strong> Two Panduit PLT4H-C0 zip ties (7.6 x 1.9, heads drawn as small '
+            'blocks, estimated), one through each of the saddle\'s tunnels at <code>remix.STRAP_SLOT_Z</code>, out of '
+            'both sides, round the saddle\'s back corners and round the pole. Each loop also takes in the weather '
+            'meter\'s mast (behind the pole) and the two RJ11 cables (down the pole\'s +x side), so the straps that '
+            'bind the bracket hold the wires and the mast too. The heads are behind the mast, as '
+            '<code>sources.pole_strap_tie</code> asks (the pole\'s back).'
+            + (f' The kit\'s gear clamp at {", ".join(f"{d:g}" for d in dropped)} mm below the pole\'s top fell on '
+               'the bracket, so it isn\'t drawn: the bracket straps do its job there.' if dropped else '') + '</li>'
             '<li><strong>What the repo doesn\'t say.</strong> Nothing in the code gives the TX box and the shield a '
             'position relative to each other. The pole is Ø'
             f'{POLE_D:g} (about 1 in, Clint\'s figure). This page assumes: both on the same side of it, facing the '
@@ -848,12 +887,11 @@ def assembly_page(out, tx, sh):
             f'{POLE_GAP:g} mm above the end of the TX base\'s top flange. That gap also clears the AE1 antenna, which '
             'stands about 70 mm above the top wall. Change <code>POLE_D</code> and <code>POLE_GAP</code> in '
             '<code>build.py</code> to move them.</li>'
-            '<li><strong>On the 1 in pole.</strong> Everything still fits. The TX base\'s flanges and the shield arm\'s '
-            'upright sit flat on the pole, and their hose clamps get shorter: about 34 mm across as a circle round the '
-            'pole and a flange, and 34-37 mm round the pole and the arm\'s gusset, so SAE size 20 clamps (19-44 mm). '
-            'The arm\'s slots are only about 4 mm tall, so its band has to be that narrow. The SS-GSG9-1 bonding strap '
-            'takes 1/2-2 in pipe, so it fits.</li>'
-            '<li><strong>Not drawn.</strong> Clint\'s printed lid bolts (his STL isn\'t in the repo), the hose clamps, '
+            '<li><strong>On the 1 in pole.</strong> Everything still fits. The TX base\'s flanges sit flat on the '
+            'pole, and their hose clamps close to about 34 mm across as a circle round the pole and a flange, so SAE '
+            'size 20 clamps (19-44 mm). The bracket\'s zip ties are long enough (368 mm) for their loops, which take '
+            'in the mast and the cables as well. The SS-GSG9-1 bonding strap takes 1/2-2 in pipe, so it fits.</li>'
+            '<li><strong>Not drawn.</strong> Clint\'s printed lid bolts (his STL isn\'t in the repo), the TX base\'s hose clamps, '
             'screws, glands, boards, the port and solar cables, and the antenna.</li></ul></section>',
             meter_section(md, mi, r),
             attach_section([1, 3, 4, 6, 10, 14, 17, 18, 23, 24, 25], original=True)]
@@ -873,7 +911,7 @@ def meter_section(md, mi, r):
     """What the page says about the SparkFun kit: where it is (assumed) and how big (estimated)."""
     gl, gw, gh = md["GAUGE"]
     fl, fw, _fd = md["FUNNEL"]
-    loops = " / ".join(f"{d:g}" for d in sorted(set(mi["meter-clamps"]["loop_d"])))
+    loops = " / ".join(f"{d:g}" for d in sorted(set(mi.get("meter-clamps", {}).get("loop_d", []))))
     dims = [("Mast", f"two steel tubes, Ø{md['MAST_D']:g} x {md['MAST_TUBE_L']:g} each, slid together "
                      f"{md['MAST_JOIN']:g} mm"),
             ("Cross arm", f"{md['ARM_L']:g} mm tip to tip; the cups and the vane {md['SENSOR_AT']:g} mm either side "
@@ -898,14 +936,16 @@ def meter_section(md, mi, r):
             '(the side away from the TX box and the shield), its foot this far below the pole\'s top. The cross arm '
             'sits on the mast\'s top, along x, the cups on +x and the vane on −x.</li>'
             f'<li><code>METER_CLAMPS</code> = {", ".join(f"{c:g}" for c in METER_CLAMPS)}: the kit\'s two gear clamps '
-            'hold the mast to the pole this far below the pole\'s top. Round a Ø'
-            f'{POLE_D:g} pole and the Ø{md["MAST_D"]:g} mast each band closes to about {loops} mm (as a circle), so '
-            'check the supplied clamps reach that.</li>'
+            'hold the mast to the pole this far below the pole\'s top. One that falls on the shield bracket isn\'t '
+            'drawn: the bracket\'s two zip ties hold the mast there. Round a Ø'
+            f'{POLE_D:g} pole, the Ø{md["MAST_D"]:g} mast and the two cables the one left closes to about {loops} mm '
+            '(as a circle), so check the supplied clamps reach that.</li>'
             f'<li><code>METER_RAIN_BELOW</code> = {METER_RAIN_BELOW:g}: the rain arm\'s top this far below the cross '
             'arm\'s top. The arm points out along +y, level, so the gauge is clear of the cups and the vane, as '
             'the hookup guide asks.</li>'
-            f'<li><code>METER_DRIP</code> = {METER_DRIP:g}: the two RJ11 cables run down the mast and the pole\'s +x '
-            'side to the TX box\'s WIND and RAIN PG-9 glands (<code>cage.GLAND_USE</code>), each with a drip loop '
+            f'<li><code>METER_DRIP</code> = {METER_DRIP:g}: the two RJ11 cables run down the mast, step onto the '
+            'pole\'s +x side just under its top, and run down it, through both bracket straps (between the strap and '
+            'the pole) and the gear clamp, to the TX box\'s WIND and RAIN PG-9 glands (<code>cage.GLAND_USE</code>), each with a drip loop '
             'this far below its gland. The cups\' short cable runs under the arm to the vane, which carries both on '
             'the wind cable (docs/hardware/bench-station-wiring.md section 3). The lengths drawn are in the facts '
             'above; the kit\'s own cable lengths aren\'t checked here.</li>'
